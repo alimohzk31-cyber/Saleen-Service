@@ -1,0 +1,5 @@
+{
+  "name": "Saleen Service",
+  "description": "A comprehensive service platform connecting users with service providers (doctors, technicians, companies, hotels, etc.).",
+  "requestFramePermissions": ["geolocation"]
+}

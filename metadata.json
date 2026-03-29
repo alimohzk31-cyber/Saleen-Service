@@ -1,0 +1,5 @@
+{
+  "name": "Saleen Service",
+  "description": "All services in one place",
+  "requestFramePermissions": ["geolocation"]
+}
