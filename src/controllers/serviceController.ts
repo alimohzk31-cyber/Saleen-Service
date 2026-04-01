@@ -31,6 +31,22 @@ export const createService = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const incrementViews = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const result = await query(
+      'UPDATE services SET views = views + 1 WHERE id = $1 RETURNING views',
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+    res.json({ views: result.rows[0].views });
+  } catch (error) {
+    console.error('Error incrementing views:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
 export const getServices = async (req: Request, res: Response) => {
   try {
     const { page = 1, limit = 100, search = '', category_id, subcategory_id, sort = 'newest' } = req.query;

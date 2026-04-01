@@ -84,7 +84,7 @@ export function ProviderDetails({ provider, onBack, language, isAdmin, setAllPro
         )}
 
         {/* Image Indicators */}
-        {provider.images.length > 1 && (
+        {provider.images?.length > 1 && (
           <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-2 z-10">
             {provider.images.map((_, idx) => (
               <button

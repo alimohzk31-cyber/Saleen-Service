@@ -66,25 +66,26 @@ export function InfoModal({ isOpen, onClose, language }: Props) {
             {/* Header Decoration */}
             <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-blue-600/20 to-purple-600/20 blur-3xl -z-10" />
             
-            <div className="p-6 sm:p-8 overflow-y-auto custom-scrollbar">
-              <div className="flex justify-between items-start mb-8">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-                    <Info className="w-8 h-8 text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white leading-tight">{t.title}</h2>
-                    <p className="text-blue-600 dark:text-blue-400 font-bold text-sm sm:text-base">{t.subtitle}</p>
-                  </div>
+            {/* Sticky Header */}
+            <div className="p-6 sm:p-8 pb-0 flex justify-between items-start z-10">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                  <Info className="w-8 h-8 text-white" />
                 </div>
-                <button 
-                  onClick={onClose}
-                  className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white leading-tight">{t.title}</h2>
+                  <p className="text-blue-600 dark:text-blue-400 font-bold text-sm sm:text-base">{t.subtitle}</p>
+                </div>
               </div>
+              <button 
+                onClick={onClose}
+                className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all shadow-sm"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
 
+            <div className="p-6 sm:p-8 pt-4 overflow-y-auto custom-scrollbar flex-1">
               <div className="space-y-8">
                 {/* Brief Section */}
                 <section>

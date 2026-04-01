@@ -9,8 +9,18 @@ const goldTypes = [
   { id: 3, name: 'ذهب برازيلي', flag: '🇧🇷', image: 'https://picsum.photos/seed/brazilian/400/300' },
 ];
 
-const GoldsmithsSection = ({ onBack }: { onBack: () => void }) => {
+const GoldsmithsSection = ({ onBack, setIsSearchHidden }: { onBack: () => void, setIsSearchHidden?: (hidden: boolean) => void }) => {
   const [showBrowse, setShowBrowse] = useState(false);
+  const [showJoinForm, setShowJoinForm] = useState(false);
+
+  React.useEffect(() => {
+    if (setIsSearchHidden) {
+      setIsSearchHidden(showJoinForm);
+    }
+    return () => {
+      if (setIsSearchHidden) setIsSearchHidden(false);
+    };
+  }, [showJoinForm, setIsSearchHidden]);
 
   return (
     <AnimatePresence mode="wait">
@@ -56,10 +66,28 @@ const GoldsmithsSection = ({ onBack }: { onBack: () => void }) => {
           </div>
 
           <div className="mt-12 text-center">
-            <button className="bg-transparent border-2 border-amber-500 text-amber-500 px-8 py-3 rounded-full font-bold hover:bg-amber-500 hover:text-slate-950 transition">
+            <button 
+              onClick={() => setShowJoinForm(true)}
+              className="bg-transparent border-2 border-amber-500 text-amber-500 px-8 py-3 rounded-full font-bold hover:bg-amber-500 hover:text-slate-950 transition"
+            >
               <Store className="inline mr-2" /> انضمام كتاجر
             </button>
           </div>
+
+          {showJoinForm && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+              <div className="bg-slate-900 border border-amber-700 rounded-3xl p-8 w-full max-w-md">
+                <h2 className="text-2xl font-bold mb-6 text-amber-400">انضمام كتاجر ذهب</h2>
+                <p className="text-amber-500/70 mb-6">يرجى التواصل مع الإدارة لتفعيل حسابك كتاجر في قسم الذهب.</p>
+                <button 
+                  onClick={() => setShowJoinForm(false)}
+                  className="w-full py-3 rounded-xl bg-amber-600 text-slate-950 font-bold"
+                >
+                  إغلاق
+                </button>
+              </div>
+            </div>
+          )}
         </motion.div>
       ) : (
         <motion.div

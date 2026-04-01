@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, 
@@ -33,11 +33,14 @@ import {
   Croissant,
   Cake as CakeIcon,
   Candy,
-  Settings,
   Info,
   Banknote,
-  Globe
+  Globe,
+  Search,
+  X
 } from 'lucide-react';
+import { categories } from '../data/mock';
+import { Provider, Category } from '../types';
 
 const subcategoryIcons: Record<string, any> = {
   contracting: HardHat,
@@ -69,7 +72,6 @@ import { AddServiceForm } from './AddServiceForm';
 import { SupportModal } from './SupportModal';
 import { InfoModal } from './InfoModal';
 import { Language } from '../App';
-import { Category, Provider } from '../types';
 import { useGeolocation, calculateDistance } from '../utils/geo';
 
 interface Props {
@@ -84,6 +86,8 @@ interface Props {
   onJoinClick?: () => void;
   setLanguage: (lang: Language) => void;
   appSettings: any;
+  setIsSearchHidden?: (hidden: boolean) => void;
+  onSelectCategory?: (category: Category) => void;
 }
 
 export function BrowseScreen({ 
@@ -97,14 +101,38 @@ export function BrowseScreen({
   isAdmin, 
   onJoinClick,
   setLanguage,
-  appSettings
+  appSettings,
+  setIsSearchHidden,
+  onSelectCategory
 }: Props) {
   const [activeTab, setActiveTab] = useState('all');
   const { location } = useGeolocation();
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
-  const [showAddService, setShowAddService] = useState(false);
-  const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showAddService, setShowAddService] = useState(() => {
+    return localStorage.getItem(`showAddService_${category.id}`) === 'true';
+  });
+  const [editingProvider, setEditingProvider] = useState<Provider | null>(() => {
+    const saved = localStorage.getItem(`editingProvider_${category.id}`);
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    localStorage.setItem(`showAddService_${category.id}`, String(showAddService));
+    if (setIsSearchHidden) {
+      setIsSearchHidden(showAddService);
+    }
+    if (editingProvider) {
+      localStorage.setItem(`editingProvider_${category.id}`, JSON.stringify(editingProvider));
+    } else {
+      localStorage.removeItem(`editingProvider_${category.id}`);
+    }
+    
+    return () => {
+      if (setIsSearchHidden) setIsSearchHidden(false);
+    };
+  }, [showAddService, editingProvider, category.id, setIsSearchHidden]);
+
   const [showInfo, setShowInfo] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [schoolType, setSchoolType] = useState<'public' | 'private' | 'kindergarten' | 'all'>('all');
@@ -129,7 +157,7 @@ export function BrowseScreen({
   };
 
   const filteredProviders = useMemo(() => {
-    let filtered = allProviders.filter(p => p.categoryId === category.id);
+    let filtered = (allProviders || []).filter(p => p.categoryId === category.id);
     
     if (activeTab !== 'all') {
       filtered = filtered.filter(p => p.subcategoryId === activeTab);
@@ -158,6 +186,30 @@ export function BrowseScreen({
       }
     }
   };
+
+  const categoryProviders = (allProviders || []).filter(p => p.categoryId === category.id);
+  const activeSubcategoriesCount = new Set(categoryProviders.map(p => p.subcategoryId)).size;
+  const servicesCount = categoryProviders.length;
+
+  const searchResults = useMemo(() => {
+    if (searchQuery.trim().length < 1) return { categories: [], providers: [] };
+    
+    const query = searchQuery.toLowerCase();
+    
+    const filteredCats = categories.filter(cat => 
+      cat.label.ar.toLowerCase().includes(query) || 
+      cat.label.en.toLowerCase().includes(query)
+    );
+    
+    const filteredProviders = allProviders.filter(p => 
+      p.name.ar.toLowerCase().includes(query) || 
+      p.name.en.toLowerCase().includes(query) ||
+      p.specialty.ar.toLowerCase().includes(query) ||
+      p.specialty.en.toLowerCase().includes(query)
+    );
+    
+    return { categories: filteredCats, providers: filteredProviders };
+  }, [searchQuery, allProviders]);
 
   return (
     <motion.div 
@@ -193,54 +245,6 @@ export function BrowseScreen({
         </div>
 
         <div className="flex items-center gap-2">
-          {appSettings?.showSettingsIcon !== false && (
-            <div className="relative">
-              <button 
-                onClick={() => setShowSettings(!showSettings)}
-                className="p-3 rounded-full bg-white/10 backdrop-blur-md border border-slate-200/20 hover:bg-white/20 transition-all"
-                title={language === 'ar' ? 'الإعدادات' : 'Settings'}
-              >
-                <Settings className="w-6 h-6" />
-              </button>
-              
-              <AnimatePresence>
-                {showSettings && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="absolute top-full mt-2 left-0 w-56 rounded-2xl bg-slate-900/95 backdrop-blur-xl border border-slate-700 shadow-2xl p-3 z-50 overflow-hidden"
-                    style={{
-                      boxShadow: '0 0 25px rgba(0, 0, 0, 0.5)'
-                    }}
-                  >
-                    <div className="flex flex-col gap-2">
-                      <div className="p-2 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-700">
-                        {language === 'ar' ? 'اللغة' : 'Language'}
-                      </div>
-                      <button onClick={() => { setLanguage('ar'); setShowSettings(false); }} className={`flex items-center gap-3 p-3 rounded-xl text-sm font-medium transition-colors hover:bg-slate-800 ${language === 'ar' ? 'bg-slate-800 text-white' : 'text-slate-300'}`}>
-                        <Globe className="w-4 h-4" /> العربية
-                      </button>
-                      <button onClick={() => { setLanguage('en'); setShowSettings(false); }} className={`flex items-center gap-3 p-3 rounded-xl text-sm font-medium transition-colors hover:bg-slate-800 ${language === 'en' ? 'bg-slate-800 text-white' : 'text-slate-300'}`}>
-                        <Globe className="w-4 h-4" /> English
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
-
-          {appSettings?.showInfoIcon !== false && (
-            <button 
-              onClick={() => setShowInfo(true)}
-              className="px-4 py-2 rounded-full bg-blue-500/20 backdrop-blur-md border border-blue-500/30 text-blue-600 hover:bg-blue-500/30 transition-all font-bold text-sm"
-              title={language === 'ar' ? 'عن التطبيق' : 'About App'}
-            >
-              {language === 'ar' ? 'نبذة' : 'About'}
-            </button>
-          )}
-
           {appSettings?.walletInfo?.showWallet !== false && (
             <button 
               onClick={() => setShowSupport(true)}
@@ -253,9 +257,13 @@ export function BrowseScreen({
         </div>
       </div>
 
-      {showAddService && (
+      {showAddService ? (
         <AddServiceForm 
           onClose={() => setShowAddService(false)} 
+          onSuccess={(provider) => {
+            setShowAddService(false);
+            onSelectProvider(provider);
+          }}
           language={language} 
           currentUser={currentUser} 
           providerToEdit={editingProvider || undefined} 
@@ -263,134 +271,136 @@ export function BrowseScreen({
           initialCategoryId={category.id}
           initialSubcategoryId={activeTab !== 'all' ? activeTab : category.subcategories[0]?.id}
         />
-      )}
-
-      {/* Tabs (Horizontal Scroll) */}
-      <div className="flex overflow-x-auto hide-scrollbar gap-3 mb-6 pb-2">
-        {category.subcategories.length > 0 && (
-          <button
-            onClick={() => setActiveTab('all')}
-            className={`whitespace-nowrap px-6 py-2.5 rounded-full font-medium transition-all ${
-              activeTab === 'all' 
-                ? 'bg-primary text-white shadow-lg shadow-primary/20' 
-                : 'bg-white/10 dark:bg-slate-800/50 border border-slate-200/20 dark:border-slate-700/50 hover:bg-white/20'
-            }`}
-          >
-            {language === 'ar' ? 'الكل' : 'All'}
-          </button>
-        )}
-        {category.subcategories.map((sub) => (
-          <button
-            key={sub.id}
-            onClick={() => setActiveTab(sub.id)}
-            className={`whitespace-nowrap px-6 py-2.5 rounded-full font-medium transition-all ${
-              activeTab === sub.id 
-                ? 'bg-primary text-white shadow-lg shadow-primary/20' 
-                : 'bg-white/10 dark:bg-slate-800/50 border border-slate-200/20 dark:border-slate-700/50 hover:bg-white/20'
-            }`}
-          >
-            {sub.label[language]}
-          </button>
-        ))}
-      </div>
-
-      {/* Join Button for this specific subcategory */}
-      <div className="w-full mb-8">
-        <button
-          onClick={() => {
-            setEditingProvider(null);
-            setShowAddService(true);
-          }}
-          className="w-full py-4 rounded-2xl bg-gradient-to-r from-primary to-purple-600 text-white font-bold shadow-lg flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
-        >
-          <UserPlus className="w-6 h-6" />
-          {language === 'ar' 
-            ? `انضمام كمقدم خدمة في ${category.subcategories.find(s => s.id === activeTab)?.label.ar || category.label.ar}` 
-            : `Join as provider in ${category.subcategories.find(s => s.id === activeTab)?.label.en || category.label.en}`}
-        </button>
-      </div>
-
-      {/* Provider List */}
-      <div className="flex flex-col gap-4">
-        {filteredProviders.length === 0 ? (
-          <div className="text-center py-12 opacity-60">
-            {language === 'ar' ? 'لا يوجد خدمات متاحة حالياً' : 'No services available currently'}
+      ) : (
+        <>
+          {/* Tabs (Horizontal Scroll) */}
+          <div className="flex overflow-x-auto hide-scrollbar gap-3 mb-6 pb-2">
+            {category.subcategories.length > 0 && (
+              <button
+                onClick={() => setActiveTab('all')}
+                className={`whitespace-nowrap px-6 py-2.5 rounded-full font-medium transition-all ${
+                  activeTab === 'all' 
+                    ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                    : 'bg-white/10 dark:bg-slate-800/50 border border-slate-200/20 dark:border-slate-700/50 hover:bg-white/20'
+                }`}
+              >
+                {language === 'ar' ? 'الكل' : 'All'}
+              </button>
+            )}
+            {category.subcategories.map((sub) => (
+              <button
+                key={sub.id}
+                onClick={() => setActiveTab(sub.id)}
+                className={`whitespace-nowrap px-6 py-2.5 rounded-full font-medium transition-all ${
+                  activeTab === sub.id 
+                    ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                    : 'bg-white/10 dark:bg-slate-800/50 border border-slate-200/20 dark:border-slate-700/50 hover:bg-white/20'
+                }`}
+              >
+                {sub.label[language]}
+              </button>
+            ))}
           </div>
-        ) : (
-          filteredProviders.map((provider: any) => (
-            <motion.div
-              key={provider.id}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => onSelectProvider(provider)}
-              className="flex flex-col sm:flex-row gap-4 p-4 rounded-2xl bg-slate-800/5 dark:bg-white/5 backdrop-blur-md border border-slate-400/20 dark:border-white/10 cursor-pointer hover:shadow-[0_0_20px_rgba(168,85,247,0.15)] transition-all"
+
+          {/* Join Button for this specific subcategory */}
+          <div className="w-full mb-8">
+            <button
+              onClick={() => {
+                setEditingProvider(null);
+                setShowAddService(true);
+              }}
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-primary to-purple-600 text-white font-bold shadow-lg flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
             >
-              <img 
-                src={provider.image} 
-                alt={provider.name[language]} 
-                className="w-full sm:w-32 h-48 sm:h-32 object-cover rounded-xl"
-              />
-              <div className="flex-1 flex flex-col justify-between">
-                <div>
-                  <div className="flex justify-between items-start mb-1">
-                    <h3 className="text-xl font-bold">{provider.name[language]}</h3>
-                    <div className="flex items-center gap-1 bg-amber-500/20 text-amber-600 dark:text-amber-400 px-2 py-1 rounded-lg text-sm font-bold">
-                      <Star className="w-4 h-4 fill-current" />
-                      {provider.rating}
+              <UserPlus className="w-6 h-6" />
+              {language === 'ar' 
+                ? `انضمام كمقدم خدمة في ${category.subcategories.find(s => s.id === activeTab)?.label.ar || category.label.ar}` 
+                : `Join as provider in ${category.subcategories.find(s => s.id === activeTab)?.label.en || category.label.en}`}
+            </button>
+          </div>
+
+          {/* Provider List */}
+          <div className="flex flex-col gap-4">
+            {filteredProviders.length === 0 ? (
+              <div className="text-center py-12 opacity-60">
+                {language === 'ar' ? 'لا يوجد خدمات متاحة حالياً' : 'No services available currently'}
+              </div>
+            ) : (
+              filteredProviders.map((provider: any) => (
+                <motion.div
+                  key={provider.id}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => onSelectProvider(provider)}
+                  className="flex flex-col sm:flex-row gap-4 p-4 rounded-2xl bg-slate-800/5 dark:bg-white/5 backdrop-blur-md border border-slate-400/20 dark:border-white/10 cursor-pointer hover:shadow-[0_0_20px_rgba(168,85,247,0.15)] transition-all"
+                >
+                  <img 
+                    src={provider.image} 
+                    alt={provider.name[language]} 
+                    className="w-full sm:w-32 h-48 sm:h-32 object-cover rounded-xl"
+                  />
+                  <div className="flex-1 flex flex-col justify-between">
+                    <div>
+                      <div className="flex justify-between items-start mb-1">
+                        <h3 className="text-xl font-bold">{provider.name[language]}</h3>
+                        <div className="flex items-center gap-1 bg-amber-500/20 text-amber-600 dark:text-amber-400 px-2 py-1 rounded-lg text-sm font-bold">
+                          <Star className="w-4 h-4 fill-current" />
+                          {provider.rating}
+                        </div>
+                      </div>
+                      <p className="text-purple-600 dark:text-purple-400 font-medium mb-2">
+                        {provider.specialty[language]}
+                      </p>
+                      {provider.bio && (
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-2 line-clamp-2">
+                          {provider.bio[language]}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 opacity-70 text-sm mb-3">
+                        <MapPin className="w-4 h-4" />
+                        <span>{provider.locationName[language]}</span>
+                        {provider.distance !== undefined && (
+                          <span className="font-bold text-pink-600 dark:text-pink-400">
+                            ({provider.distance.toFixed(1)} km)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <span className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium ${
+                        provider.type === 'mobile' 
+                          ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300' 
+                          : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                      }`}>
+                        {provider.type === 'mobile' ? <Car className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
+                        {provider.type === 'mobile' 
+                          ? (language === 'ar' ? 'متنقل' : 'Mobile') 
+                          : (language === 'ar' ? 'ثابت' : 'Fixed')}
+                      </span>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setSelectedProvider(provider); }}
+                        className="p-2 rounded-full bg-blue-500/20 text-blue-600 hover:bg-blue-500/30"
+                      >
+                        <MapPin className="w-5 h-5" />
+                      </button>
+                      {isAdmin && (
+                        <>
+                          <button onClick={(e) => { e.stopPropagation(); handleEditService(provider); }} className="p-2 rounded-full bg-blue-500/20 text-blue-600 hover:bg-blue-500/30">
+                            <Edit className="w-5 h-5" />
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); deleteService(provider.id); }} className="p-2 rounded-full bg-red-500/20 text-red-600 hover:bg-red-500/30">
+                            <Trash className="w-5 h-5" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <p className="text-purple-600 dark:text-purple-400 font-medium mb-2">
-                    {provider.specialty[language]}
-                  </p>
-                  {provider.bio && (
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-2 line-clamp-2">
-                      {provider.bio[language]}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-2 opacity-70 text-sm mb-3">
-                    <MapPin className="w-4 h-4" />
-                    <span>{provider.locationName[language]}</span>
-                    {provider.distance !== undefined && (
-                      <span className="font-bold text-pink-600 dark:text-pink-400">
-                        ({provider.distance.toFixed(1)} km)
-                      </span>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <span className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-medium ${
-                    provider.type === 'mobile' 
-                      ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300' 
-                      : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                  }`}>
-                    {provider.type === 'mobile' ? <Car className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
-                    {provider.type === 'mobile' 
-                      ? (language === 'ar' ? 'متنقل' : 'Mobile') 
-                      : (language === 'ar' ? 'ثابت' : 'Fixed')}
-                  </span>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); setSelectedProvider(provider); }}
-                    className="p-2 rounded-full bg-blue-500/20 text-blue-600 hover:bg-blue-500/30"
-                  >
-                    <MapPin className="w-5 h-5" />
-                  </button>
-                  {isAdmin && (
-                    <>
-                      <button onClick={(e) => { e.stopPropagation(); handleEditService(provider); }} className="p-2 rounded-full bg-blue-500/20 text-blue-600 hover:bg-blue-500/30">
-                        <Edit className="w-5 h-5" />
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); deleteService(provider.id); }} className="p-2 rounded-full bg-red-500/20 text-red-600 hover:bg-red-500/30">
-                        <Trash className="w-5 h-5" />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          ))
-        )}
-      </div>
+                </motion.div>
+              ))
+            )}
+          </div>
+        </>
+      )}
 
       {selectedProvider && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -422,7 +432,6 @@ export function BrowseScreen({
         isOpen={showSupport} 
         onClose={() => setShowSupport(false)} 
         language={language} 
-        walletInfo={appSettings?.walletInfo}
       />
 
       <InfoModal 

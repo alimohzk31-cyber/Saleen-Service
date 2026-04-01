@@ -182,7 +182,7 @@ export function AdminContentCenter({
                     <div className="text-center">
                       <h3 className="font-black text-xl mb-1">{category.label[language]}</h3>
                       <p className="text-white/70 text-sm font-medium">
-                        {providers.filter(p => p.categoryId === category.id).length} {language === 'ar' ? 'خدمة' : 'Services'}
+                        {providers?.filter(p => p.categoryId === category.id).length || 0} {language === 'ar' ? 'خدمة' : 'Services'}
                       </p>
                     </div>
 

@@ -18,7 +18,7 @@ export function MediaLibrary({ providers, language }: Props) {
       
       <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
         <ImageIcon className="w-6 h-6" />
-        {language === 'ar' ? 'الصور' : 'Images'} ({allImages.length})
+        {language === 'ar' ? 'الصور' : 'Images'} ({allImages?.length || 0})
       </h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
         {allImages.map((img, i) => (
@@ -28,7 +28,7 @@ export function MediaLibrary({ providers, language }: Props) {
 
       <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
         <Video className="w-6 h-6" />
-        {language === 'ar' ? 'الفيديوهات' : 'Videos'} ({allVideos.length})
+        {language === 'ar' ? 'الفيديوهات' : 'Videos'} ({allVideos?.length || 0})
       </h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {allVideos.map((vid, i) => (

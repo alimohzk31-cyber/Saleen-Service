@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Language, Theme } from '../App';
 import { ArrowLeft, ArrowRight, LayoutDashboard, UserPlus, Clock, Users, Activity, Briefcase, MapPin, Upload, PlusCircle, CheckCircle2, Image as ImageIcon, AlertTriangle } from 'lucide-react';
 import { Settings } from 'lucide-react';
 import { Provider, AppSettings } from '../types';
+import { Location } from '../utils/geo';
 import { categories } from '../data/mock';
 import { AdminUserList } from './AdminUserList';
 import { AdminContentCenter } from './AdminContentCenter';
@@ -20,6 +21,8 @@ interface Props {
   setAppSettings: React.Dispatch<React.SetStateAction<AppSettings | null>>;
   setLanguage: (lang: Language) => void;
   isMockMode?: boolean;
+  location: Location | null;
+  locationError: string | null;
 }
 
 const compressImage = (file: File, maxWidth = 800): Promise<string> => {
@@ -65,16 +68,34 @@ export function AdminPanel({
   appSettings, 
   setAppSettings,
   setLanguage,
-  isMockMode
+  isMockMode,
+  location,
+  locationError
 }: Props) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'recent' | 'users' | 'settings' | 'content' | 'media' | 'live_browse'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'recent' | 'users' | 'settings' | 'content' | 'media' | 'live_browse'>(() => {
+    return (localStorage.getItem('adminActiveTab') as any) || 'dashboard';
+  });
   const [categories, setCategories] = useState(initialCategories);
-  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(() => {
+    return localStorage.getItem('adminEditingProviderId');
+  });
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
-  const [showProviderForm, setShowProviderForm] = useState(false);
+  const [showProviderForm, setShowProviderForm] = useState(() => {
+    return localStorage.getItem('adminShowProviderForm') === 'true';
+  });
   const [activeStep, setActiveStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('adminActiveTab', activeTab);
+    if (editingProviderId) {
+      localStorage.setItem('adminEditingProviderId', editingProviderId);
+    } else {
+      localStorage.removeItem('adminEditingProviderId');
+    }
+    localStorage.setItem('adminShowProviderForm', String(showProviderForm));
+  }, [activeTab, editingProviderId, showProviderForm]);
   const [categoryFormData, setCategoryFormData] = useState({
     id: '',
     iconName: 'Sparkles',
@@ -99,7 +120,11 @@ export function AdminPanel({
     images: [] as string[],
     video: '',
     logo: '',
-    type: 'fixed' as 'fixed' | 'mobile'
+    type: 'fixed' as 'fixed' | 'mobile',
+    bioAr: '', bioEn: '',
+    workingHoursAr: '', workingHoursEn: '',
+    approximatePricesAr: '', approximatePricesEn: '',
+    isEmergency24h: false
   });
 
   const [showSuccess, setShowSuccess] = useState(false);
@@ -108,15 +133,21 @@ export function AdminPanel({
     enableMaps: appSettings?.enableMaps ?? false,
     showSettingsIcon: appSettings?.showSettingsIcon ?? true,
     showInfoIcon: appSettings?.showInfoIcon ?? true,
+    showEmergencyIcon: appSettings?.showEmergencyIcon ?? true,
+    showAdminIcon: appSettings?.showAdminIcon ?? true,
+    emergencyNumber: appSettings?.emergencyNumber || '911',
+    welcomeTitle: appSettings?.welcomeTitle || { ar: 'Saleen Service', en: 'Saleen Service' },
+    welcomeSubtitle: appSettings?.welcomeSubtitle || { ar: 'كل الخدمات بمكان واحد', en: 'All services in one place' },
     walletInfo: appSettings?.walletInfo || {
       zainCash: '+964 770 000 0000',
       masterCard: '0000-0000-0000-0000',
+      supportPhone: '07736034126',
       showWallet: true
     }
   });
   const [isSettingsSubmitting, setIsSettingsSubmitting] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
-  const [stats, setStats] = useState({ users: 0, services: 0, orders: 0, activeOrders: 0 });
+  const [stats, setStats] = useState({ users: 0, services: 0, orders: 0, activeOrders: 0, visitors: 0 });
 
   React.useEffect(() => {
     const fetchStats = async () => {
@@ -163,7 +194,7 @@ export function AdminPanel({
     if (validFiles.length === 0) return;
     
     const compressedImages = await Promise.all(validFiles.map(f => compressImage(f)));
-    setFormData(prev => ({ ...prev, images: [...prev.images, ...compressedImages] }));
+    setFormData(prev => ({ ...prev, images: [...(prev.images || []), ...compressedImages] }));
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -221,6 +252,25 @@ export function AdminPanel({
     );
   };
 
+  const handleResetVisitors = async () => {
+    if (!window.confirm(language === 'ar' ? 'هل أنت متأكد من تصفير عداد الزوار؟' : 'Are you sure you want to reset the visitors counter?')) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/visits/clear', {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        setStats(prev => ({ ...prev, visitors: 0 }));
+        alert(language === 'ar' ? '✅ تم تصفير العداد بنجاح' : '✅ Counter reset successfully');
+      }
+    } catch (error) {
+      console.error('Error resetting visitors:', error);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -241,9 +291,13 @@ export function AdminPanel({
         experience: { ar: formData.expAr, en: formData.expEn || formData.expAr },
         certificates: [{ ar: formData.certAr, en: formData.certEn || formData.certAr }],
         image: formData.images[0] || 'https://images.unsplash.com/photo-1555212697-194d092e3b8f?auto=format&fit=crop&q=80&w=400&h=400',
-        images: formData.images.length > 0 ? formData.images : ['https://images.unsplash.com/photo-1555212697-194d092e3b8f?auto=format&fit=crop&q=80&w=800&h=400'],
+        images: (formData.images || []).length > 0 ? formData.images : ['https://images.unsplash.com/photo-1555212697-194d092e3b8f?auto=format&fit=crop&q=80&w=800&h=400'],
         video: formData.video,
         logo: formData.logo,
+        bio: { ar: formData.bioAr, en: formData.bioEn },
+        workingHours: { ar: formData.workingHoursAr, en: formData.workingHoursEn },
+        approximatePrices: { ar: formData.approximatePricesAr, en: formData.approximatePricesEn },
+        isEmergency24h: formData.isEmergency24h,
         createdAt: Date.now()
       };
 
@@ -269,7 +323,10 @@ export function AdminPanel({
         service_type: formData.type,
         experience: formData.expAr,
         certificates: [{ ar: formData.certAr, en: formData.certEn || formData.certAr }],
-        bio: formData.bioAr
+        bio: { ar: formData.bioAr, en: formData.bioEn },
+        workingHours: { ar: formData.workingHoursAr, en: formData.workingHoursEn },
+        approximatePrices: { ar: formData.approximatePricesAr, en: formData.approximatePricesEn },
+        isEmergency24h: formData.isEmergency24h
       });
       console.log('Saving service with requestBody:', requestBody);
 
@@ -314,7 +371,9 @@ export function AdminPanel({
           categoryId: categories[0].id, subcategoryId: 'all', certAr: '', certEn: '', expAr: '', expEn: '',
           rating: 5, phone: '', lat: 0, lng: 0, 
           nearestLandmarkAr: '', nearestLandmarkEn: '',
-          images: [], video: '', logo: '', type: 'fixed'
+          images: [], video: '', logo: '', type: 'fixed',
+          bioAr: '', bioEn: '', workingHoursAr: '', workingHoursEn: '',
+          approximatePricesAr: '', approximatePricesEn: '', isEmergency24h: false
         });
         setActiveTab('recent');
       }, 2000);
@@ -389,7 +448,11 @@ export function AdminPanel({
       images: [],
       video: '',
       logo: '',
-      type: 'fixed'
+      type: 'fixed',
+      bioAr: '', bioEn: '',
+      workingHoursAr: '', workingHoursEn: '',
+      approximatePricesAr: '', approximatePricesEn: '',
+      isEmergency24h: false
     });
     setShowProviderForm(true);
   };
@@ -411,14 +474,31 @@ export function AdminPanel({
       images: provider.images,
       video: provider.video || '',
       logo: provider.logo || '',
-      type: provider.type
+      type: provider.type,
+      bioAr: provider.bio?.ar || '', bioEn: provider.bio?.en || '',
+      workingHoursAr: provider.workingHours?.ar || '', workingHoursEn: provider.workingHours?.en || '',
+      approximatePricesAr: provider.approximatePrices?.ar || '', approximatePricesEn: provider.approximatePrices?.en || '',
+      isEmergency24h: provider.isEmergency24h || false
     });
     setShowProviderForm(true);
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col md:flex-row">
-      {/* Sidebar */}
+    <div className="min-h-screen w-full flex flex-col">
+      {isMockMode && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 p-2 text-center relative z-[200]">
+          <div className="max-w-5xl mx-auto flex items-center justify-center gap-2 text-amber-500 text-xs sm:text-sm font-medium">
+            <AlertTriangle className="w-4 h-4" />
+            <span>
+              {language === 'ar' 
+                ? 'تنبيه: التطبيق يعمل في وضع التجربة. البيانات لن تُحفظ بشكل دائم. يرجى ضبط DATABASE_URL.' 
+                : 'Warning: Running in Mock Mode. Data will not be persisted. Please set DATABASE_URL.'}
+            </span>
+          </div>
+        </div>
+      )}
+      <div className="flex-1 flex flex-col md:flex-row">
+        {/* Sidebar */}
       <div className="w-full md:w-64 bg-white dark:bg-slate-900 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800 p-6 flex flex-col">
         <div className="flex items-center gap-4 mb-8">
           <button onClick={onBack} className="p-2 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">
@@ -506,6 +586,20 @@ export function AdminPanel({
                   </div>
                   <h3 className="text-slate-500 dark:text-slate-400 font-medium mb-1">{language === 'ar' ? 'إجمالي الطلبات' : 'Total Orders'}</h3>
                   <p className="text-4xl font-black">{stats.orders}</p>
+                </div>
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-800 relative group">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4">
+                    <Users className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-slate-500 dark:text-slate-400 font-medium mb-1">{language === 'ar' ? 'عدد الزوار' : 'Visitors'}</h3>
+                  <p className="text-4xl font-black">{stats.visitors}</p>
+                  <button 
+                    onClick={handleResetVisitors}
+                    className="absolute top-4 right-4 p-2 rounded-lg bg-red-500/10 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 hover:text-white"
+                    title={language === 'ar' ? 'تصفير العداد' : 'Reset Counter'}
+                  >
+                    <Clock className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </motion.div>
@@ -697,11 +791,14 @@ export function AdminPanel({
                         </button>
                       </div>
 
-                      <form onSubmit={handleSubmit} className="flex flex-col gap-8">
+                      <form 
+                        id="admin-service-form"
+                        className="flex flex-col gap-8"
+                      >
                         {/* Progress Tabs */}
-                        <div className="flex justify-between gap-2 mb-4">
+                        <div className="flex justify-between gap-2 mb-4 overflow-x-auto hide-scrollbar">
                           {['الأساسي', 'المهنية', 'الموقع', 'الوسائط'].map((label, i) => (
-                            <button key={i} type="button" onClick={() => setActiveStep(i)} className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${activeStep === i ? 'bg-purple-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+                            <button key={i} type="button" onClick={() => setActiveStep(i)} className={`flex-1 py-2 px-4 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${activeStep === i ? 'bg-purple-500 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
                               {label}
                             </button>
                           ))}
@@ -716,14 +813,20 @@ export function AdminPanel({
                             <select value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value, subcategoryId: 'all'})} className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-purple-500 outline-none">
                               {categories.map(c => <option key={c.id} value={c.id}>{c.label[language]}</option>)}
                             </select>
-                            {categories.find(c => c.id === formData.categoryId)?.subcategories && categories.find(c => c.id === formData.categoryId)!.subcategories.length > 0 && (
-                              <select value={formData.subcategoryId} onChange={e => setFormData({...formData, subcategoryId: e.target.value})} className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-purple-500 outline-none md:col-span-2">
-                                <option value="all">{language === 'ar' ? 'الكل / عام' : 'All / General'}</option>
-                                {categories.find(c => c.id === formData.categoryId)?.subcategories.map(sub => (
-                                  <option key={sub.id} value={sub.id}>{sub.label[language]}</option>
-                                ))}
-                              </select>
-                            )}
+                            {(() => {
+                              const selectedCategory = categories.find(c => c.id === formData.categoryId);
+                              if (selectedCategory?.subcategories && selectedCategory.subcategories.length > 0) {
+                                return (
+                                  <select value={formData.subcategoryId} onChange={e => setFormData({...formData, subcategoryId: e.target.value})} className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-purple-500 outline-none md:col-span-2">
+                                    <option value="all">{language === 'ar' ? 'الكل / عام' : 'All / General'}</option>
+                                    {selectedCategory.subcategories.map(sub => (
+                                      <option key={sub.id} value={sub.id}>{sub.label[language]}</option>
+                                    ))}
+                                  </select>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                         )}
 
@@ -797,6 +900,8 @@ export function AdminPanel({
                           </div>
                         )}
 
+
+
                         {/* Navigation */}
                         <div className="flex gap-4">
                           {activeStep > 0 && (
@@ -809,7 +914,12 @@ export function AdminPanel({
                               {language === 'ar' ? 'التالي' : 'Next'}
                             </button>
                           ) : (
-                            <button type="submit" disabled={isSubmitting} className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold shadow-lg disabled:opacity-50">
+                            <button type="button" onClick={(e) => {
+                              const form = document.getElementById('admin-service-form') as HTMLFormElement;
+                              if (form && form.reportValidity()) {
+                                handleSubmit(e);
+                              }
+                            }} disabled={isSubmitting} className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold shadow-lg disabled:opacity-50">
                               {isSubmitting ? '...' : (language === 'ar' ? 'حفظ البيانات' : 'Save Data')}
                             </button>
                           )}
@@ -832,15 +942,6 @@ export function AdminPanel({
           {/* Live Browse Tab */}
           {activeTab === 'live_browse' && (
             <motion.div key="live_browse" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
-              <div className="bg-blue-500 text-white p-4 rounded-2xl mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Activity className="w-6 h-6" />
-                  <span className="font-bold">{language === 'ar' ? 'أنت الآن في وضع التصفح المباشر مع صلاحيات الإدارة' : 'You are now in Live Browse mode with Admin privileges'}</span>
-                </div>
-                <button onClick={() => setActiveTab('dashboard')} className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-bold transition-colors">
-                  {language === 'ar' ? 'العودة للوحة التحكم' : 'Back to Dashboard'}
-                </button>
-              </div>
               <div className="bg-white dark:bg-slate-900 rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-700 h-[calc(100vh-200px)] overflow-y-auto">
                 <MainApp 
                   onBack={() => setActiveTab('dashboard')}
@@ -852,6 +953,8 @@ export function AdminPanel({
                   setCurrentUser={() => {}}
                   appSettings={appSettings}
                   isAdmin={true}
+                  location={location}
+                  locationError={locationError}
                 />
               </div>
             </motion.div>
@@ -870,7 +973,10 @@ export function AdminPanel({
                 )}
               </div>
 
-              <form onSubmit={handleSaveSettings} className="bg-card-bg dark:bg-card-bg-dark p-6 sm:p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 flex flex-col gap-8 max-w-2xl">
+              <form 
+                id="admin-settings-form"
+                className="bg-card-bg dark:bg-card-bg-dark p-6 sm:p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 flex flex-col gap-8 max-w-2xl"
+              >
                 <div className="flex flex-col gap-4">
                   <div className="flex items-center justify-between p-4 bg-bg-app dark:bg-bg-app-dark rounded-xl mb-4">
                     <div>
@@ -924,6 +1030,86 @@ export function AdminPanel({
                       <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-blue-500"></div>
                     </label>
                   </div>
+
+                  <div className="flex items-center justify-between p-4 bg-bg-app dark:bg-bg-app-dark rounded-xl">
+                    <div>
+                      <h3 className="font-bold text-lg text-text-app dark:text-text-app-dark">{language === 'ar' ? 'أيقونة الطوارئ' : 'Emergency Icon'}</h3>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{language === 'ar' ? 'إظهار أو إخفاء أيقونة الاتصال بالطوارئ' : 'Show or hide the emergency call icon'}</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={settingsForm.showEmergencyIcon} onChange={(e) => setSettingsForm({ ...settingsForm, showEmergencyIcon: e.target.checked })} />
+                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-red-500"></div>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 bg-bg-app dark:bg-bg-app-dark rounded-xl">
+                    <div>
+                      <h3 className="font-bold text-lg text-text-app dark:text-text-app-dark">{language === 'ar' ? 'أيقونة الإدارة' : 'Admin Icon'}</h3>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{language === 'ar' ? 'إظهار أو إخفاء أيقونة الدخول للوحة الإدارة' : 'Show or hide the admin login icon'}</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={settingsForm.showAdminIcon} onChange={(e) => setSettingsForm({ ...settingsForm, showAdminIcon: e.target.checked })} />
+                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-slate-600"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-4 border-t border-slate-200 dark:border-slate-700 pt-8">
+                  <h3 className="font-bold text-xl mb-2">{language === 'ar' ? 'نصوص الواجهة الترحيبية' : 'Welcome Screen Texts'}</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold opacity-70">{language === 'ar' ? 'العنوان (عربي)' : 'Title (Arabic)'}</label>
+                        <input 
+                          type="text" 
+                          value={settingsForm.welcomeTitle?.ar} 
+                          onChange={(e) => setSettingsForm({ ...settingsForm, welcomeTitle: { ...settingsForm.welcomeTitle!, ar: e.target.value } })} 
+                          className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-purple-500 outline-none" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold opacity-70">{language === 'ar' ? 'العنوان (إنجليزي)' : 'Title (English)'}</label>
+                        <input 
+                          type="text" 
+                          value={settingsForm.welcomeTitle?.en} 
+                          onChange={(e) => setSettingsForm({ ...settingsForm, welcomeTitle: { ...settingsForm.welcomeTitle!, en: e.target.value } })} 
+                          className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-purple-500 outline-none" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold opacity-70">{language === 'ar' ? 'الوصف (عربي)' : 'Subtitle (Arabic)'}</label>
+                        <input 
+                          type="text" 
+                          value={settingsForm.welcomeSubtitle?.ar} 
+                          onChange={(e) => setSettingsForm({ ...settingsForm, welcomeSubtitle: { ...settingsForm.welcomeSubtitle!, ar: e.target.value } })} 
+                          className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-purple-500 outline-none" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold opacity-70">{language === 'ar' ? 'الوصف (إنجليزي)' : 'Subtitle (English)'}</label>
+                        <input 
+                          type="text" 
+                          value={settingsForm.welcomeSubtitle?.en} 
+                          onChange={(e) => setSettingsForm({ ...settingsForm, welcomeSubtitle: { ...settingsForm.welcomeSubtitle!, en: e.target.value } })} 
+                          className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-purple-500 outline-none" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold opacity-70">{language === 'ar' ? 'رقم الطوارئ' : 'Emergency Number'}</label>
+                      <input 
+                        type="text" 
+                        value={settingsForm.emergencyNumber} 
+                        onChange={(e) => setSettingsForm({ ...settingsForm, emergencyNumber: e.target.value })} 
+                        className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-red-500 outline-none font-mono" 
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Wallet Settings */}
@@ -958,10 +1144,24 @@ export function AdminPanel({
                         className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-yellow-500 outline-none font-mono text-sm" 
                       />
                     </div>
+                    <div className="space-y-2">
+                      <h3 className="font-bold text-lg">{language === 'ar' ? 'رقم الدعم المباشر' : 'Direct Support Number'}</h3>
+                      <input 
+                        type="text" 
+                        value={settingsForm.walletInfo?.supportPhone} 
+                        onChange={(e) => setSettingsForm({ ...settingsForm, walletInfo: { ...settingsForm.walletInfo!, supportPhone: e.target.value } })} 
+                        className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 focus:ring-2 focus:ring-emerald-500 outline-none font-mono text-sm" 
+                      />
+                    </div>
                   </div>
                 </div>
 
-                <button type="submit" disabled={isSettingsSubmitting} className="w-full py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold shadow-lg disabled:opacity-50 mt-4">
+                <button type="button" onClick={(e) => {
+                  const form = document.getElementById('admin-settings-form') as HTMLFormElement;
+                  if (form && form.reportValidity()) {
+                    handleSaveSettings(e);
+                  }
+                }} disabled={isSettingsSubmitting} className="w-full py-4 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold shadow-lg disabled:opacity-50 mt-4">
                   {isSettingsSubmitting ? '...' : (language === 'ar' ? 'حفظ الإعدادات' : 'Save Settings')}
                 </button>
               </form>
@@ -971,5 +1171,6 @@ export function AdminPanel({
         </AnimatePresence>
       </div>
     </div>
-  );
+  </div>
+);
 }

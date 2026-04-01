@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { MainApp } from './components/MainApp';
 import { AdminPanel } from './components/AdminPanel';
-import { AlertTriangle } from 'lucide-react';
 import { Provider, AppSettings } from './types';
+import { useGeolocation } from './utils/geo';
+import { supabase } from './lib/supabaseClient';
 
 export type Language = 'ar' | 'en';
 export type Theme = 'light' | 'dark';
@@ -13,10 +14,52 @@ export default function App() {
     return (localStorage.getItem('language') as Language) || 'ar';
   });
   const [currentScreen, setCurrentScreen] = useState<'welcome' | 'home' | 'admin'>(() => {
-    return (localStorage.getItem('currentScreen') as 'welcome' | 'home' | 'admin') || 'welcome';
+    const savedScreen = localStorage.getItem('currentScreen');
+    const lastActivity = localStorage.getItem('lastActivity');
+    const now = Date.now();
+    const timeout = 30 * 60 * 1000; // 30 minutes in milliseconds
+
+    if (lastActivity) {
+      const lastActivityTime = parseInt(lastActivity);
+      if (!isNaN(lastActivityTime) && now - lastActivityTime > timeout) {
+        console.log('Session timed out, redirecting to welcome screen');
+        localStorage.setItem('currentScreen', 'welcome');
+        return 'welcome';
+      }
+    }
+
+    console.log('Initializing currentScreen from localStorage:', savedScreen);
+    return (savedScreen as 'welcome' | 'home' | 'admin') || 'welcome';
   });
+
+  // Update last activity on every render/interaction
+  useEffect(() => {
+    const updateActivity = () => {
+      localStorage.setItem('lastActivity', Date.now().toString());
+    };
+
+    // Update immediately
+    updateActivity();
+
+    // Also update on common interactions
+    window.addEventListener('mousedown', updateActivity);
+    window.addEventListener('touchstart', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+
+    return () => {
+      window.removeEventListener('mousedown', updateActivity);
+      window.removeEventListener('touchstart', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+    };
+  }, []);
+
+  const handleScreenChange = (screen: 'welcome' | 'home' | 'admin') => {
+    console.log('Setting screen to:', screen);
+    localStorage.setItem('currentScreen', screen);
+    setCurrentScreen(screen);
+  };
   
-  // Local state for providers (fetched from Supabase/PostgreSQL)
+  // Local state for providers (fetched from Supabase)
   const [allProviders, setAllProviders] = useState<Provider[]>([]);
   
   // Mock current user (always null for guest, or mock admin if needed)
@@ -28,34 +71,18 @@ export default function App() {
     if (saved) return JSON.parse(saved);
     return {};
   });
-  const [isMockMode, setIsMockMode] = useState(false);
+  const { location, error: locationError } = useGeolocation();
 
   useEffect(() => {
     const initApp = async () => {
       try {
-        // Check health and mock status
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000);
-          const healthResponse = await fetch('/api/health', { signal: controller.signal });
-          clearTimeout(timeoutId);
-          const healthData = await healthResponse.json();
-          setIsMockMode(healthData.isMock);
-        } catch (e: any) {
-          if (e.name !== 'AbortError') {
-            console.error('Health check failed:', e);
-          }
-        }
-
-        // Fetch services from backend
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5000);
-          const response = await fetch('/api/services', { signal: controller.signal });
-          clearTimeout(timeoutId);
-          if (response.ok) {
-            const result = await response.json();
-            const mappedProviders: Provider[] = result.data.map((service: any) => ({
+        // Fetch services from Supabase
+        if (supabase) {
+          const { data, error } = await supabase.from('services').select('*');
+          if (error) {
+            console.error('Failed to fetch services from Supabase:', error);
+          } else if (data) {
+            const mappedProviders: Provider[] = data.map((service: any) => ({
               id: String(service.id),
               categoryId: String(service.category_id),
               subcategoryId: service.subcategory_id || 'all',
@@ -74,13 +101,12 @@ export default function App() {
               certificates: Array.isArray(service.certificates) ? service.certificates : [],
               bio: { ar: service.bio || '', en: service.bio || '' },
               createdAt: new Date(service.created_at).getTime(),
+              views: service.views || 0,
             }));
             setAllProviders(mappedProviders);
           }
-        } catch (e: any) {
-          if (e.name !== 'AbortError') {
-            console.error('Failed to fetch services:', e);
-          }
+        } else {
+          console.warn('Supabase client not initialized.');
         }
       } catch (error) {
         console.error('Failed to initialize app:', error);
@@ -93,6 +119,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    console.log('Saving currentScreen to localStorage:', currentScreen);
     localStorage.setItem('currentScreen', currentScreen);
   }, [currentScreen]);
 
@@ -112,58 +139,51 @@ export default function App() {
 
   if (!isAuthReady) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-neon-dark text-white">
+      <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 text-white">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen w-full transition-colors duration-500 bg-neon-dark text-white">
-      {isMockMode && (
-        <div className="fixed top-0 left-0 right-0 bg-yellow-500 text-black text-[10px] font-bold py-1 px-4 z-[9999] flex items-center justify-center gap-2 shadow-lg">
-          <AlertTriangle className="w-3 h-3" />
-          <span>MOCK MODE - DATABASE NOT CONNECTED</span>
-        </div>
-      )}
-
+    <div className="min-h-screen w-full bg-slate-950 text-white">
       {currentScreen === 'welcome' && (
         <WelcomeScreen 
           language={language} 
           setLanguage={setLanguage}
-          onEnter={() => setCurrentScreen('home')}
-          onAdminLogin={() => {
-            setCurrentUser({ uid: 'admin', role: 'admin' });
-            setCurrentScreen('admin');
-          }}
+          onEnter={() => handleScreenChange('home')} 
+          onAdminLogin={() => handleScreenChange('admin')}
           appSettings={appSettings}
+          isMockMode={!supabase}
         />
       )}
       {currentScreen === 'home' && (
         <MainApp 
-          onBack={() => setCurrentScreen('welcome')} 
+          onBack={() => handleScreenChange('welcome')}
           language={language} 
           setLanguage={setLanguage}
           allProviders={allProviders}
           setAllProviders={setAllProviders}
-          currentUser={currentUser}
+          currentUser={currentUser} 
           setCurrentUser={setCurrentUser}
           appSettings={appSettings}
+          location={location}
+          locationError={locationError}
+          isMockMode={!supabase}
         />
       )}
       {currentScreen === 'admin' && (
         <AdminPanel 
-          onBack={() => {
-            setCurrentUser(null);
-            setCurrentScreen('welcome');
-          }} 
-          language={language} 
+          onBack={() => handleScreenChange('home')}
+          language={language}
           allProviders={allProviders}
           setAllProviders={setAllProviders}
           appSettings={appSettings}
           setAppSettings={setAppSettings}
           setLanguage={setLanguage}
-          isMockMode={isMockMode}
+          isMockMode={!supabase}
+          location={location}
+          locationError={locationError}
         />
       )}
     </div>

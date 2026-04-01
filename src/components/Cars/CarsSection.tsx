@@ -25,9 +25,10 @@ interface Props {
   onBack: () => void;
   language: Language;
   currentUser: any | null;
+  setIsSearchHidden?: (hidden: boolean) => void;
 }
 
-export default function CarsSection({ onBack, language, currentUser }: Props) {
+export default function CarsSection({ onBack, language, currentUser, setIsSearchHidden }: Props) {
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCar, setSelectedCar] = useState<Car | null>(null);
@@ -36,6 +37,15 @@ export default function CarsSection({ onBack, language, currentUser }: Props) {
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedOrigin, setSelectedOrigin] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
+
+  React.useEffect(() => {
+    if (setIsSearchHidden) {
+      setIsSearchHidden(showAddForm);
+    }
+    return () => {
+      if (setIsSearchHidden) setIsSearchHidden(false);
+    };
+  }, [showAddForm, setIsSearchHidden]);
 
   const categories = [
     { id: 'all', label: { ar: 'الكل', en: 'All' } },
@@ -79,9 +89,9 @@ export default function CarsSection({ onBack, language, currentUser }: Props) {
         <div className="flex items-center gap-4">
           <button 
             onClick={onBack} 
-            className="p-3 rounded-full bg-white/10 dark:bg-slate-800/50 backdrop-blur-md border border-slate-200/20 dark:border-slate-700/50 hover:bg-white/20 transition-all"
+            className="p-2 transition-all hover:scale-110 active:scale-95"
           >
-            {language === 'ar' ? <ArrowRight className="w-6 h-6" /> : <ArrowLeft className="w-6 h-6" />}
+            {language === 'ar' ? <ArrowRight className="w-7 h-7 text-slate-900 dark:text-white" /> : <ArrowLeft className="w-7 h-7 text-slate-900 dark:text-white" />}
           </button>
           <h1 className="text-2xl sm:text-3xl font-black text-text-app dark:text-text-app-dark">
             {language === 'ar' ? 'بيع وشراء السيارات' : 'Buy & Sell Cars'}
@@ -96,18 +106,20 @@ export default function CarsSection({ onBack, language, currentUser }: Props) {
       </div>
 
       {/* Search Bar */}
-      <div className="w-full relative mb-6">
-        <div className="flex items-center bg-card-bg dark:bg-card-bg-dark rounded-2xl border border-slate-200 dark:border-slate-700 p-2 shadow-lg">
-          <Search className="w-6 h-6 text-slate-400 ml-3 mr-3" />
-          <input 
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={language === 'ar' ? 'ابحث عن سيارة، موديل...' : 'Search for a car, model...'}
-            className="flex-1 bg-transparent border-none outline-none text-lg p-2 text-text-app dark:text-text-app-dark placeholder:text-slate-400"
-          />
+      {!showAddForm && (
+        <div className="w-full relative mb-6">
+          <div className="flex items-center bg-card-bg dark:bg-card-bg-dark rounded-2xl border border-slate-200 dark:border-slate-700 p-2 shadow-lg">
+            <Search className="w-6 h-6 text-slate-400 ml-3 mr-3" />
+            <input 
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={language === 'ar' ? 'ابحث عن سيارة، موديل...' : 'Search for a car, model...'}
+              className="flex-1 bg-transparent border-none outline-none text-lg p-2 text-text-app dark:text-text-app-dark placeholder:text-slate-400"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Filters Panel */}
       <AnimatePresence>
@@ -282,9 +294,9 @@ export default function CarsSection({ onBack, language, currentUser }: Props) {
                 <img src={selectedCar.image} alt="" className="w-full h-full object-cover" />
                 <button 
                   onClick={() => setSelectedCar(null)}
-                  className="absolute top-6 right-6 p-2 rounded-full bg-black/50 text-white backdrop-blur-md"
+                  className="absolute top-6 right-6 p-2 rounded-full bg-black/50 text-white backdrop-blur-md hover:bg-black/70 transition-colors"
                 >
-                  <X className="w-6 h-6" />
+                  <X className="w-6 h-6 text-white" />
                 </button>
               </div>
               <div className="p-8">

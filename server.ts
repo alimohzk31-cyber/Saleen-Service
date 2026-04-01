@@ -14,6 +14,7 @@ import orderRoutes from './src/routes/orderRoutes';
 import reviewRoutes from './src/routes/reviewRoutes';
 import categoryRoutes from './src/routes/categoryRoutes';
 import userRoutes from './src/routes/userRoutes';
+import visitRoutes from './src/routes/visitRoutes';
 
 async function startServer() {
   const app = express();
@@ -24,12 +25,12 @@ async function startServer() {
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // Initialize DB
-  console.log('Initializing DB...');
-  initDB().then(() => {
-    console.log('DB initialization finished.');
-  }).catch(err => {
-    console.error('DB initialization failed:', err);
-  });
+  // console.log('Initializing DB...');
+  // initDB().then(() => {
+  //   console.log('DB initialization finished.');
+  // }).catch(err => {
+  //   console.error('DB initialization failed:', err);
+  // });
 
   // API Routes
   app.use('/api/auth', authRoutes);
@@ -38,11 +39,15 @@ async function startServer() {
   app.use('/api/reviews', reviewRoutes);
   app.use('/api/categories', categoryRoutes);
   app.use('/api/users', userRoutes);
+  app.use('/api/visits', visitRoutes);
 
   app.get('/api/health', async (req, res) => {
-    const isMock = !process.env.DATABASE_URL;
+    const { isDatabaseConnected } = await import('./src/db/index');
+    const isMock = !process.env.DATABASE_URL || !isDatabaseConnected;
     try {
-      await query('SELECT 1');
+      if (!isMock) {
+        await query('SELECT 1');
+      }
       res.json({ 
         status: 'ok', 
         database: isMock ? 'mock' : 'connected',
@@ -53,7 +58,7 @@ async function startServer() {
         status: 'error', 
         database: isMock ? 'mock' : 'disconnected', 
         message: err instanceof Error ? err.message : 'Unknown error',
-        isMock
+        isMock: true
       });
     }
   });

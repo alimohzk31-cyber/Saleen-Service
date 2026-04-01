@@ -47,12 +47,14 @@ export const getStats = async (req: Request, res: Response) => {
     const serviceCount = await query('SELECT COUNT(*) FROM services');
     const orderCount = await query('SELECT COUNT(*) FROM orders');
     const activeOrders = await query('SELECT COUNT(*) FROM orders WHERE status = \'pending\'');
+    const visitorCount = await query('SELECT COUNT(*) FROM visits');
 
     res.json({
       users: parseInt(userCount.rows[0].count),
       services: parseInt(serviceCount.rows[0].count),
       orders: parseInt(orderCount.rows[0].count),
-      activeOrders: parseInt(activeOrders.rows[0].count)
+      activeOrders: parseInt(activeOrders.rows[0].count),
+      visitors: parseInt(visitorCount.rows[0].count)
     });
   } catch (error) {
     console.error('Error fetching stats:', error);

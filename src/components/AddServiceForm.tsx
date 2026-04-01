@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { Language } from '../App';
-import { ArrowLeft, ArrowRight, MapPin, Upload, CheckCircle2, Video } from 'lucide-react';
+import { ArrowLeft, ArrowRight, MapPin, Upload, CheckCircle2, Video, Play, Pause, Volume2, X } from 'lucide-react';
 import { categories } from '../data/mock';
 import { Provider } from '../types';
+import { supabase } from '../lib/supabaseClient';
 
 interface Props {
   onClose: () => void;
+  onSuccess?: (provider: Provider) => void;
   language: Language;
   currentUser: any;
   providerToEdit?: Provider;
@@ -42,29 +44,73 @@ const compressImage = (file: File, maxWidth = 800): Promise<string> => {
   });
 };
 
-export function AddServiceForm({ onClose, language, currentUser, providerToEdit, setAllProviders, initialCategoryId, initialSubcategoryId }: Props) {
+export function AddServiceForm({ onClose, onSuccess, language, currentUser, providerToEdit, setAllProviders, initialCategoryId, initialSubcategoryId }: Props) {
   const [activeStep, setActiveStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const [showSuccess, setShowSuccess] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   
-  const [formData, setFormData] = useState({
-    nameAr: '', nameEn: '',
-    placeNameAr: '', placeNameEn: '',
-    specialtyAr: '', specialtyEn: '',
-    categoryId: initialCategoryId || categories[0].id,
-    subcategoryId: initialSubcategoryId || 'all',
-    certAr: '', certEn: '',
-    expAr: '', expEn: '',
-    rating: 5,
-    phone: '',
-    lat: 0, lng: 0,
-    images: [] as string[],
-    video: '',
-    logo: '',
-    type: 'fixed' as 'fixed' | 'mobile',
-    birthDate: '',
-    bioAr: '', bioEn: '',
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (videoRef.current) {
+      videoRef.current.volume = parseFloat(e.target.value);
+    }
+  };
+  
+  const [formData, setFormData] = useState(() => {
+    const saved = localStorage.getItem('addServiceFormData');
+    if (saved && !providerToEdit) {
+      return JSON.parse(saved);
+    }
+    return {
+      nameAr: '', nameEn: '',
+      placeNameAr: '', placeNameEn: '',
+      specialtyAr: '', specialtyEn: '',
+      categoryId: initialCategoryId || categories[0].id,
+      subcategoryId: initialSubcategoryId || 'all',
+      certAr: '', certEn: '',
+      expAr: '', expEn: '',
+      rating: 5,
+      phone: '',
+      lat: 0, lng: 0,
+      images: [] as string[],
+      video: '',
+      logo: '',
+      type: 'fixed' as 'fixed' | 'mobile',
+      age: '',
+      bioAr: '', bioEn: '',
+    };
   });
+
+  useEffect(() => {
+    if (!providerToEdit) {
+      // Exclude large binary data from localStorage to prevent quota exceeded errors
+      const { video, images, logo, ...persistentData } = formData;
+      localStorage.setItem('addServiceFormData', JSON.stringify(persistentData));
+    }
+  }, [formData, providerToEdit]);
+
+  useEffect(() => {
+    // Clean up object URL when component unmounts or video changes
+    return () => {
+      if (videoPreviewUrl) {
+        URL.revokeObjectURL(videoPreviewUrl);
+      }
+    };
+  }, [videoPreviewUrl]);
 
   useEffect(() => {
     if (providerToEdit) {
@@ -79,11 +125,11 @@ export function AddServiceForm({ onClose, language, currentUser, providerToEdit,
         rating: providerToEdit.rating,
         phone: providerToEdit.phone,
         lat: providerToEdit.lat, lng: providerToEdit.lng,
-        images: providerToEdit.images,
+        images: providerToEdit.images || [],
         video: providerToEdit.video || '',
         logo: providerToEdit.logo || '',
         type: providerToEdit.type,
-        birthDate: '',
+        age: '',
         bioAr: providerToEdit.bio?.ar || '', bioEn: providerToEdit.bio?.en || '',
       });
     }
@@ -105,7 +151,7 @@ export function AddServiceForm({ onClose, language, currentUser, providerToEdit,
     if (validFiles.length === 0) return;
     
     const compressedImages = await Promise.all(validFiles.map(f => compressImage(f)));
-    setFormData(prev => ({ ...prev, images: [...prev.images, ...compressedImages] }));
+    setFormData(prev => ({ ...prev, images: [...(prev.images || []), ...compressedImages] }));
   };
 
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,6 +165,13 @@ export function AddServiceForm({ onClose, language, currentUser, providerToEdit,
       return;
     }
     
+    // Use Object URL for preview instead of DataURL to avoid localStorage issues and performance lag
+    if (videoPreviewUrl) {
+      URL.revokeObjectURL(videoPreviewUrl);
+    }
+    const url = URL.createObjectURL(file);
+    setVideoPreviewUrl(url);
+
     const reader = new FileReader();
     reader.onload = (e) => {
       setFormData(prev => ({ ...prev, video: e.target?.result as string }));
@@ -144,12 +197,7 @@ export function AddServiceForm({ onClose, language, currentUser, providerToEdit,
     );
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (formData.lat === 0 || formData.lng === 0) {
-      alert(language === 'ar' ? 'يرجى تحديد الموقع على الخريطة أولاً' : 'Please set location on map first');
-      return;
-    }
+  const performSave = async () => {
     setIsSubmitting(true);
     
     try {
@@ -167,259 +215,277 @@ export function AddServiceForm({ onClose, language, currentUser, providerToEdit,
         experience: { ar: formData.expAr, en: formData.expEn || formData.expAr },
         certificates: [{ ar: formData.certAr, en: formData.certEn || formData.certAr }],
         bio: { ar: formData.bioAr, en: formData.bioEn || formData.bioAr },
-        image: formData.images[0] || 'https://images.unsplash.com/photo-1555212697-194d092e3b8f?auto=format&fit=crop&q=80&w=400&h=400',
-        images: formData.images.length > 0 ? formData.images : ['https://images.unsplash.com/photo-1555212697-194d092e3b8f?auto=format&fit=crop&q=80&w=800&h=400'],
+        image: (formData.images || [])[0] || 'https://images.unsplash.com/photo-1555212697-194d092e3b8f?auto=format&fit=crop&q=80&w=400&h=400',
+        images: (formData.images || []).length > 0 ? formData.images : ['https://images.unsplash.com/photo-1555212697-194d092e3b8f?auto=format&fit=crop&q=80&w=800&h=400'],
         video: formData.video,
         logo: formData.logo,
         createdAt: providerToEdit ? providerToEdit.createdAt : Date.now(),
         userId: currentUser?.uid || 'guest_user'
       };
 
-      // Call backend API to create service
-      const token = localStorage.getItem('token');
-      try {
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json'
-        };
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
+      const supabaseData = {
+        title: formData.nameAr,
+        description: formData.bioAr,
+        category_id: formData.categoryId,
+        subcategory_id: formData.subcategoryId,
+        image_url: providerData.image,
+        video_url: formData.video || '',
+        phone: formData.phone,
+        lat: formData.lat,
+        lng: formData.lng,
+        service_type: formData.type,
+        experience: formData.expAr,
+        certificates: JSON.stringify(providerData.certificates),
+        bio: formData.bioAr,
+        user_id: currentUser?.uid ? parseInt(currentUser.uid) : null
+      };
 
-        const requestBody = JSON.stringify({
-          title: formData.nameAr,
-          description: formData.bioAr,
-          price: 0,
-          category_id: formData.categoryId,
-          subcategory_id: formData.subcategoryId,
-          image_url: formData.images[0] || '',
-          video_url: formData.video || '',
-          phone: formData.phone,
-          lat: formData.lat,
-          lng: formData.lng,
-          service_type: formData.type,
-          experience: formData.expAr,
-          certificates: [{ ar: formData.certAr, en: formData.certEn || formData.certAr }],
-          bio: formData.bioAr
-        });
-
-        if (providerToEdit) {
-          const response = await fetch(`/api/services/${providerToEdit.id}`, {
-            method: 'PUT',
-            headers,
-            body: requestBody
-          });
-          
-          if (!response.ok) {
-            console.error('Failed to update service in backend:', await response.text());
-          }
-          if (setAllProviders) {
-            setAllProviders(prev => prev.map(p => p.id === providerToEdit.id ? { ...providerData, id: providerToEdit.id } as Provider : p));
-          }
-        } else {
-          const response = await fetch('/api/services', {
-            method: 'POST',
-            headers,
-            body: requestBody
-          });
-          
-          if (response.ok) {
-            const result = await response.json();
-            const newId = String(result.id);
-            if (setAllProviders) {
-              setAllProviders(prev => [...prev, { ...providerData, id: newId } as Provider]);
-            }
-          } else {
-            console.error('Failed to create service in backend:', await response.text());
-            if (setAllProviders) {
-              const newId = Date.now().toString();
-              setAllProviders(prev => [...prev, { ...providerData, id: newId } as Provider]);
-            }
-          }
-        }
-      } catch (apiError) {
-        console.error('API Error:', apiError);
+      if (providerToEdit) {
+        const { error } = await supabase
+          .from('services')
+          .update(supabaseData)
+          .eq('id', providerToEdit.id);
+        
+        if (error) throw error;
+        
         if (setAllProviders) {
-          if (providerToEdit) {
-            setAllProviders(prev => prev.map(p => p.id === providerToEdit.id ? { ...providerData, id: providerToEdit.id } as Provider : p));
-          } else {
-            const newId = Date.now().toString();
-            setAllProviders(prev => [...prev, { ...providerData, id: newId } as Provider]);
-          }
+          setAllProviders(prev => prev.map(p => p.id === providerToEdit.id ? { ...providerData, id: providerToEdit.id } as Provider : p));
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('services')
+          .insert([supabaseData])
+          .select();
+        
+        if (error) throw error;
+        
+        if (setAllProviders && data) {
+          setAllProviders(prev => [...prev, { ...providerData, id: String(data[0].id) } as Provider]);
         }
       }
 
       setShowSuccess(true);
+      if (!providerToEdit) {
+        localStorage.removeItem('addServiceFormData');
+      }
       setTimeout(() => {
-        onClose();
+        if (onSuccess) {
+          onSuccess({ ...providerData, id: providerToEdit ? providerToEdit.id : (Date.now().toString()) } as Provider);
+        } else {
+          onClose();
+        }
       }, 2000);
     } catch (error) {
       console.error("Error saving provider:", error);
-      alert(language === 'ar' ? 'حدث خطأ أثناء الحفظ' : 'Error saving provider');
+      alert(language === 'ar' ? 'حدث خطأ أثناء الحفظ: ' + (error as Error).message : 'Error saving provider: ' + (error as Error).message);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    setIsSubmitting(true);
+    setCountdown(1);
+    
+    const timer = setInterval(() => {
+      setCountdown(prev => {
+        if (prev >= 10) {
+          clearInterval(timer);
+          performSave();
+          return 10;
+        }
+        return prev + 1;
+      });
+    }, 1000);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <motion.div 
         initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto"
+        className="bg-slate-900 text-white rounded-2xl w-full max-w-[500px] shadow-2xl flex flex-col relative overflow-hidden"
+        style={{ maxHeight: '85vh' }}
       >
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">{language === 'ar' ? 'نموذج الانضمام' : 'Join Form'}</h2>
-          <button onClick={onClose} className="text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 p-2 rounded-full transition-colors">✕</button>
+        {/* Sticky Header */}
+        <div className="p-5 border-b border-white/10 sticky top-0 bg-slate-900 z-10 flex justify-between items-center">
+          <h2 className="text-[20px] font-bold text-center text-white">{language === 'ar' ? 'نموذج الانضمام' : 'Join Form'}</h2>
+          <button 
+            onClick={onClose} 
+            className="text-white/50 hover:text-white transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
         </div>
 
-        {showSuccess ? (
+        {/* Progress Tabs */}
+        <div className="flex justify-between gap-2 p-4 border-b border-white/10 overflow-x-auto hide-scrollbar">
+          {['الأساسي', 'المهنية', 'الموقع', 'الوسائط'].map((label, i) => (
+            <button key={i} type="button" onClick={() => setActiveStep(i)} className={`flex-1 py-2 px-4 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${activeStep === i ? 'bg-purple-500 text-white' : 'bg-slate-800 text-slate-500'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-5 overflow-y-auto flex-1 custom-scrollbar">
+          {showSuccess ? (
           <div className="text-center py-12 text-emerald-500 font-bold flex flex-col items-center gap-4">
             <CheckCircle2 className="w-16 h-16" />
             {language === 'ar' ? 'تمت الإضافة بنجاح!' : 'Added Successfully!'}
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-            
-            {(!initialCategoryId || !initialSubcategoryId) && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <form 
+            id="add-service-form"
+            className="flex flex-col gap-3"
+          >
+            {activeStep === 0 && (
+              <>
+                {(!initialCategoryId || !initialSubcategoryId) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'القسم الرئيسي' : 'Main Category'}</label>
+                      <select 
+                        value={formData.categoryId} 
+                        onChange={e => setFormData({...formData, categoryId: e.target.value, subcategoryId: 'all'})}
+                        className="w-full bg-slate-800 border-none rounded-lg p-3 text-white"
+                      >
+                        {categories.map(cat => (
+                          <option key={cat.id} value={cat.id}>{cat.label[language]}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'القسم الفرعي' : 'Subcategory'}</label>
+                      <select 
+                        value={formData.subcategoryId} 
+                        onChange={e => setFormData({...formData, subcategoryId: e.target.value})}
+                        className="w-full bg-slate-800 border-none rounded-lg p-3 text-white"
+                      >
+                        {categories.find(c => c.id === formData.categoryId)?.subcategories.map(sub => (
+                          <option key={sub.id} value={sub.id}>{sub.label[language]}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-col gap-1">
-                  <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'القسم الرئيسي' : 'Main Category'}</label>
-                  <select 
-                    value={formData.categoryId} 
-                    onChange={e => setFormData({...formData, categoryId: e.target.value, subcategoryId: 'all'})}
-                    className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 text-slate-900 dark:text-white"
-                  >
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.label[language]}</option>
-                    ))}
-                  </select>
+                  <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'الاسم الكامل' : 'Full Name'}</label>
+                  <input required type="text" placeholder={language === 'ar' ? 'الاسم الكامل (عربي)' : 'Full Name (Arabic)'} value={formData.nameAr} onChange={e => setFormData({...formData, nameAr: e.target.value})} className="w-full bg-slate-800 border-none rounded-lg p-3 text-white" />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'القسم الفرعي' : 'Subcategory'}</label>
-                  <select 
-                    value={formData.subcategoryId} 
-                    onChange={e => setFormData({...formData, subcategoryId: e.target.value})}
-                    className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 text-slate-900 dark:text-white"
-                  >
-                    {categories.find(c => c.id === formData.categoryId)?.subcategories.map(sub => (
-                      <option key={sub.id} value={sub.id}>{sub.label[language]}</option>
-                    ))}
-                  </select>
+                  <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'العمر' : 'Age'}</label>
+                  <input 
+                    type="number" 
+                    placeholder={language === 'ar' ? 'العمر' : 'Age'} 
+                    min="1"
+                    max="99"
+                    value={formData.age} 
+                    onChange={e => {
+                      let val = e.target.value;
+                      if (val.length > 2) val = val.slice(0, 2);
+                      setFormData({...formData, age: val});
+                    }} 
+                    className="w-full bg-slate-800 border-none rounded-lg p-3 text-white" 
+                  />
                 </div>
-              </div>
+              </>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'الاسم الكامل' : 'Full Name'}</label>
-                <input required type="text" placeholder={language === 'ar' ? 'الاسم الكامل (عربي)' : 'Full Name (Arabic)'} value={formData.nameAr} onChange={e => setFormData({...formData, nameAr: e.target.value})} className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 text-slate-900 dark:text-white" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'تاريخ الميلاد' : 'Birth Date'}</label>
-                <input type="date" value={formData.birthDate} onChange={e => setFormData({...formData, birthDate: e.target.value})} className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 text-slate-900 dark:text-white" />
-              </div>
-            </div>
+            {activeStep === 1 && (
+              <>
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'التخصص أو الوظيفة' : 'Specialty or Job'}</label>
+                  <input required type="text" placeholder={language === 'ar' ? 'التخصص (عربي)' : 'Specialty (Arabic)'} value={formData.specialtyAr} onChange={e => setFormData({...formData, specialtyAr: e.target.value})} className="w-full bg-slate-800 border-none rounded-lg p-3 text-white" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'سنوات الخبرة' : 'Years of Experience'}</label>
+                  <input required type="text" placeholder={language === 'ar' ? 'مثال: 5 سنوات' : 'e.g. 5 years'} value={formData.expAr} onChange={e => setFormData({...formData, expAr: e.target.value})} className="w-full bg-slate-800 border-none rounded-lg p-3 text-white" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'نبذة عن الخدمات المقدمة' : 'Services Description / Bio'}</label>
+                  <textarea 
+                    required 
+                    rows={3}
+                    placeholder={language === 'ar' ? 'اكتب نبذة مختصرة عن الخدمات التي تقدمها...' : 'Write a brief description of your services...'} 
+                    value={formData.bioAr} 
+                    onChange={e => setFormData({...formData, bioAr: e.target.value})} 
+                    className="w-full bg-slate-800 border-none rounded-lg p-3 resize-none text-white" 
+                  />
+                </div>
+              </>
+            )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'التخصص أو الوظيفة' : 'Specialty or Job'}</label>
-                <input required type="text" placeholder={language === 'ar' ? 'التخصص (عربي)' : 'Specialty (Arabic)'} value={formData.specialtyAr} onChange={e => setFormData({...formData, specialtyAr: e.target.value})} className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 text-slate-900 dark:text-white" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'سنوات الخبرة' : 'Years of Experience'}</label>
-                <input required type="text" placeholder={language === 'ar' ? 'مثال: 5 سنوات' : 'e.g. 5 years'} value={formData.expAr} onChange={e => setFormData({...formData, expAr: e.target.value})} className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 text-slate-900 dark:text-white" />
-              </div>
-            </div>
+            {activeStep === 2 && (
+              <>
+                <button type="button" onClick={handleGetLocation} className="w-full py-3 rounded-lg bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 flex items-center justify-center gap-2 font-bold transition-colors">
+                  <MapPin className="w-5 h-5" />
+                  {language === 'ar' ? 'تحديد الموقع على الخريطة (الإحداثيات) 📍' : 'Set Location on Map (Coordinates) 📍'}
+                </button>
+                
+                {(formData.lat !== 0 || formData.lng !== 0) && (
+                  <div className="p-3 rounded-lg bg-slate-800 text-sm font-mono text-slate-300">
+                    {language === 'ar' ? 'الإحداثيات:' : 'Coordinates:'} {formData.lat.toFixed(6)}, {formData.lng.toFixed(6)}
+                  </div>
+                )}
+              </>
+            )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'العنوان الجغرافي' : 'Address'}</label>
-                <input required type="text" placeholder={language === 'ar' ? 'اسم المكان / العنوان' : 'Place Name / Address'} value={formData.placeNameAr} onChange={e => setFormData({...formData, placeNameAr: e.target.value})} className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 text-slate-900 dark:text-white" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'رقم الهاتف' : 'Phone Number'}</label>
-                <input required type="tel" placeholder={language === 'ar' ? 'رقم الهاتف' : 'Phone Number'} value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 text-slate-900 dark:text-white" />
-              </div>
-            </div>
+            {activeStep === 3 && (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="flex flex-col items-center justify-center gap-2 w-full bg-slate-800 border-2 border-dashed border-slate-700 rounded-lg p-4 cursor-pointer hover:bg-slate-700 transition-colors">
+                    <Upload className="w-6 h-6 text-slate-400" />
+                    <span className="text-slate-400 font-medium text-center text-xs">{language === 'ar' ? 'رفع صورة' : 'Upload Image'}</span>
+                    <input type="file" multiple accept="image/*" onChange={handleImageUpload} className="hidden" />
+                  </label>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'نوع الخدمة' : 'Service Type'}</label>
-              <select 
-                value={formData.type} 
-                onChange={e => setFormData({...formData, type: e.target.value as 'fixed' | 'mobile'})}
-                className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 text-text-app dark:text-text-app-dark"
-              >
-                <option value="fixed">{language === 'ar' ? 'ثابت (محل/عيادة)' : 'Fixed (Shop/Clinic)'}</option>
-                <option value="mobile">{language === 'ar' ? 'متنقل (خدمة منزلية)' : 'Mobile (Home Service)'}</option>
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'نبذة عن الخدمات المقدمة' : 'Services Description / Bio'}</label>
-              <textarea 
-                required 
-                rows={3}
-                placeholder={language === 'ar' ? 'اكتب نبذة مختصرة عن الخدمات التي تقدمها...' : 'Write a brief description of your services...'} 
-                value={formData.bioAr} 
-                onChange={e => setFormData({...formData, bioAr: e.target.value})} 
-                className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl p-4 resize-none text-slate-900 dark:text-white" 
-              />
-            </div>
-            
-            <button type="button" onClick={handleGetLocation} className="w-full py-4 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 flex items-center justify-center gap-2 font-bold transition-colors">
-              <MapPin className="w-5 h-5" />
-              {language === 'ar' ? 'تحديد الموقع على الخريطة (الإحداثيات) 📍' : 'Set Location on Map (Coordinates) 📍'}
-            </button>
-            
-            {(formData.lat !== 0 || formData.lng !== 0) && (
-              <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm font-mono text-slate-600 dark:text-slate-300">
-                {language === 'ar' ? 'الإحداثيات:' : 'Coordinates:'} {formData.lat.toFixed(6)}, {formData.lng.toFixed(6)}
-              </div>
+                  <label className="flex flex-col items-center justify-center gap-2 w-full bg-slate-800 border-2 border-dashed border-slate-700 rounded-lg p-4 cursor-pointer hover:bg-slate-700 transition-colors">
+                    <Video className="w-6 h-6 text-slate-400" />
+                    <span className="text-slate-400 font-medium text-center text-xs">{language === 'ar' ? 'رفع فيديو' : 'Upload Video'}</span>
+                    <input type="file" accept="video/*" onChange={handleVideoUpload} className="hidden" />
+                  </label>
+                </div>
+              </>
             )}
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <label className="flex flex-col items-center justify-center gap-2 w-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-6 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-                <Upload className="w-8 h-8 text-slate-500" />
-                <span className="text-slate-500 font-medium text-center">{language === 'ar' ? 'رفع صورة شخصية أو للمكان' : 'Upload Profile/Place Image'}</span>
-                <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-              </label>
-
-              <label className="flex flex-col items-center justify-center gap-2 w-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-6 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-                <Video className="w-8 h-8 text-slate-500" />
-                <span className="text-slate-500 font-medium text-center">{language === 'ar' ? 'رفع مقطع فيديو توضيحي' : 'Upload Promo Video'}</span>
-                <input type="file" accept="video/*" onChange={handleVideoUpload} className="hidden" />
-              </label>
-            </div>
-
-            {/* Previews */}
-            {formData.images.length > 0 && (
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                {formData.images.map((img, idx) => (
-                  <img key={idx} src={img} alt="Preview" className="w-full h-24 object-cover rounded-lg" />
-                ))}
-              </div>
-            )}
-            {formData.video && (
-              <div className="mt-2">
-                <video src={formData.video} controls className="w-full h-48 rounded-lg" />
-              </div>
-            )}
-            
-            <button 
-              type="submit" 
-              disabled={isSubmitting} 
-              className="w-full py-4 mt-4 rounded-2xl bg-gradient-to-r from-primary to-purple-600 text-white font-bold shadow-lg disabled:opacity-50 hover:opacity-90 transition-all text-lg flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  <span>{language === 'ar' ? 'جاري الحفظ...' : 'Saving...'}</span>
-                </>
-              ) : (
-                language === 'ar' ? 'حفظ البيانات والانضمام' : 'Save & Join'
+            {/* Navigation */}
+            <div className="flex gap-4 mt-4">
+              {activeStep > 0 && (
+                <button type="button" onClick={() => setActiveStep(activeStep - 1)} className="flex-1 py-4 rounded-2xl bg-slate-800 text-white font-bold">
+                  {language === 'ar' ? 'السابق' : 'Previous'}
+                </button>
               )}
-            </button>
+              {activeStep < 3 ? (
+                <button type="button" onClick={() => setActiveStep(activeStep + 1)} className="flex-1 py-4 rounded-2xl bg-purple-600 text-white font-bold">
+                  {language === 'ar' ? 'التالي' : 'Next'}
+                </button>
+              ) : (
+                <button 
+                  type="button" 
+                  onClick={(e) => {
+                    const form = document.getElementById('add-service-form') as HTMLFormElement;
+                    if (form && form.reportValidity()) {
+                      handleSubmit(e);
+                    }
+                  }}
+                  disabled={isSubmitting} 
+                  className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-primary to-purple-600 text-white font-bold shadow-lg disabled:opacity-50 hover:opacity-90 transition-all text-lg flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      <span>{language === 'ar' ? `جاري الحفظ... ${countdown}/10` : `Saving... ${countdown}/10`}</span>
+                    </>
+                  ) : (
+                    language === 'ar' ? 'حفظ البيانات والانضمام' : 'Save & Join'
+                  )}
+                </button>
+              )}
+            </div>
           </form>
         )}
+        </div>
       </motion.div>
     </div>
   );

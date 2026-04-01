@@ -64,9 +64,13 @@ export function AdminUserList() {
   };
 
   const filteredUsers = users.filter(user => {
-    const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                         (user.phone && user.phone.includes(searchTerm));
+    const name = user.name || '';
+    const email = user.email || '';
+    const phone = user.phone || '';
+    
+    const matchesSearch = name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                         email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         phone.includes(searchTerm);
     
     if (filter === 'verified') return matchesSearch && user.is_verified;
     if (filter === 'blocked') return matchesSearch && user.status === 'blocked';

@@ -66,9 +66,10 @@ interface Props {
   onEnter: () => void;
   onAdminLogin: () => void;
   appSettings: AppSettings | null;
+  isMockMode?: boolean;
 }
 
-export function WelcomeScreen({ language, setLanguage, onEnter, onAdminLogin, appSettings }: Props) {
+export function WelcomeScreen({ language, setLanguage, onEnter, onAdminLogin, appSettings, isMockMode }: Props) {
   const t = translations[language];
   const [showSettings, setShowSettings] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
@@ -100,15 +101,22 @@ export function WelcomeScreen({ language, setLanguage, onEnter, onAdminLogin, ap
       });
       
       if (!response.ok) {
-        throw new Error(t.invalidCode);
+        throw new Error('invalid');
       }
       
       const data = await response.json();
       localStorage.setItem('token', data.token);
       onAdminLogin();
       setShowAdminLogin(false);
+      setAdminCode('');
+      setError('');
     } catch (err: any) {
-      setError(err.message);
+      setError('error');
+      setTimeout(() => {
+        setShowAdminLogin(false);
+        setAdminCode('');
+        setError('');
+      }, 1000);
     }
   };
 
@@ -122,8 +130,14 @@ export function WelcomeScreen({ language, setLanguage, onEnter, onAdminLogin, ap
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-between p-6 overflow-hidden w-full">
       {/* Top Bar */}
-      <div className="w-full max-w-4xl flex justify-between items-center z-20">
+      <div className="w-full max-w-4xl flex flex-wrap justify-between items-center gap-4 z-20">
         <div className="flex items-center gap-2">
+          {isMockMode && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-500 text-xs font-bold animate-pulse">
+              <AlertTriangle className="w-4 h-4" />
+              <span>{language === 'ar' ? 'وضع التجربة (لا توجد قاعدة بيانات)' : 'Mock Mode (No DB)'}</span>
+            </div>
+          )}
           {appSettings?.showSettingsIcon !== false && (
             <div className="relative">
               <button 
@@ -171,24 +185,28 @@ export function WelcomeScreen({ language, setLanguage, onEnter, onAdminLogin, ap
         </div>
 
         {/* Small Emergency Button */}
-        <motion.button
-          initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.4 }}
-          onClick={() => setShowEmergencyConfirm(true)}
-          className="relative group flex items-center justify-center px-6 py-2 rounded-full bg-red-600 text-white font-bold text-lg shadow-[0_0_20px_rgba(220,38,38,0.5)] hover:bg-red-500 transition-all hover:scale-105"
-        >
-          <div className="absolute inset-0 rounded-full border-2 border-red-400/50 animate-ping"></div>
-          <div className="flex items-center gap-2">
-            <Phone className="w-5 h-5" />
-            <span>911</span>
-          </div>
-        </motion.button>
+        {appSettings?.showEmergencyIcon !== false && (
+          <motion.button
+            initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.4 }}
+            onClick={() => setShowEmergencyConfirm(true)}
+            className="relative group flex items-center justify-center px-6 py-2 rounded-full bg-red-600 text-white font-bold text-lg shadow-[0_0_20px_rgba(220,38,38,0.5)] hover:bg-red-500 transition-all hover:scale-105"
+          >
+            <div className="absolute inset-0 rounded-full border-2 border-red-400/50 animate-ping"></div>
+            <div className="flex items-center gap-2">
+              <Phone className="w-5 h-5" />
+              <span>{appSettings?.emergencyNumber || '911'}</span>
+            </div>
+          </motion.button>
+        )}
 
-        <button 
-          onClick={handleAdminClick}
-          className="p-3 rounded-full bg-slate-800/20 dark:bg-white/10 backdrop-blur-md border border-slate-400/20 dark:border-white/20 hover:bg-slate-800/30 dark:hover:bg-white/20 transition-all"
-        >
-          <Shield className="w-6 h-6" />
-        </button>
+        {appSettings?.showAdminIcon !== false && (
+          <button 
+            onClick={handleAdminClick}
+            className="p-3 rounded-full bg-slate-800/20 dark:bg-white/10 backdrop-blur-md border border-slate-400/20 dark:border-white/20 hover:bg-slate-800/30 dark:hover:bg-white/20 transition-all"
+          >
+            <Shield className="w-6 h-6" />
+          </button>
+        )}
       </div>
 
       {/* Main Content */}
@@ -227,43 +245,45 @@ export function WelcomeScreen({ language, setLanguage, onEnter, onAdminLogin, ap
           className="text-center mb-10"
         >
           <h1 className="text-5xl sm:text-7xl font-black mb-4 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-purple-500 to-pink-500 dark:from-purple-400 dark:to-pink-500" style={{ filter: 'drop-shadow(0 0 10px rgba(236,72,153,0.3))' }}>
-            Saleen Service
+            {appSettings?.welcomeTitle?.[language] || 'Saleen Service'}
           </h1>
+          {appSettings?.welcomeSubtitle?.[language] && (
+            <p className="text-xl sm:text-2xl font-bold text-slate-600 dark:text-slate-400">
+              {appSettings.welcomeSubtitle[language]}
+            </p>
+          )}
         </motion.div>
 
-        {/* Emergency Confirm Modal */}
+        {/* Secret Admin Login Modal */}
         <AnimatePresence>
           {showAdminLogin && (
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
+              className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/30 backdrop-blur-sm p-4"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setShowAdminLogin(false);
+              }}
             >
               <motion.div 
-                initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
-                className="bg-slate-900 border-2 border-purple-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(168,85,247,0.4)] w-full max-w-md text-center"
+                initial={{ scale: 0.9, y: 20 }} 
+                animate={error ? { x: [-10, 10, -10, 10, 0], transition: { duration: 0.4 } } : { scale: 1, y: 0 }} 
+                exit={{ scale: 0.9, y: 20, opacity: 0 }}
+                className="w-full max-w-sm text-center flex flex-col items-center"
               >
-                <div className="w-20 h-20 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Shield className="w-10 h-10 text-purple-500" />
+                <div className="mb-6">
+                  <Shield className={`w-16 h-16 transition-colors duration-300 ${error ? 'text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.8)]' : 'text-[#00f0ff] drop-shadow-[0_0_15px_rgba(0,240,255,0.8)]'}`} />
                 </div>
-                <h3 className="text-2xl font-bold text-white mb-8">{t.adminCode}</h3>
-                <form onSubmit={handleAdminSubmit} className="flex flex-col gap-4">
+                <form onSubmit={handleAdminSubmit} className="w-full max-w-[200px]">
                   <input 
                     type="password" 
                     value={adminCode} 
-                    onChange={(e) => setAdminCode(e.target.value)} 
-                    className="w-full py-4 px-6 rounded-2xl bg-white/10 border border-white/20 text-white text-center text-2xl tracking-widest outline-none focus:border-purple-500 transition-all"
-                    placeholder="****"
+                    onChange={(e) => {
+                      setAdminCode(e.target.value);
+                      setError('');
+                    }} 
+                    className="w-full py-3 px-4 rounded-xl bg-white/10 border-none text-white text-center text-xl tracking-widest outline-none backdrop-blur-md shadow-[0_0_15px_rgba(0,0,0,0.2)]"
                     autoFocus
                   />
-                  {error && <p className="text-red-500 font-bold">{error}</p>}
-                  <div className="flex gap-4 mt-4">
-                    <button type="button" onClick={() => setShowAdminLogin(false)} className="flex-1 py-4 rounded-2xl bg-slate-800 text-white font-semibold hover:bg-slate-700 transition-colors">
-                      {t.no}
-                    </button>
-                    <button type="submit" className="flex-1 py-4 rounded-2xl bg-purple-600 text-white font-bold hover:bg-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.5)] transition-all">
-                      {t.submit}
-                    </button>
-                  </div>
                 </form>
               </motion.div>
             </motion.div>

@@ -7,9 +7,9 @@ export const initDB = async () => {
   }
 
   let client;
-  let retries = 1;
-  let delay = 1000; // 1 second
-  const totalRetries = 1;
+  let retries = 10; 
+  let delay = 3000; 
+  const totalRetries = 10;
 
   while (retries > 0) {
     try {
@@ -21,20 +21,19 @@ export const initDB = async () => {
     } catch (err: any) {
       retries--;
       console.error(`Failed to connect to the database (Attempt ${totalRetries - retries}/${totalRetries}):`, err.message);
-      if (err.message.includes('self signed certificate')) {
-        console.error('HINT: This might be an SSL issue. Ensure your connection string or pool config is correct for Supabase.');
-      }
-      if (err.message.includes('timeout')) {
-        console.error('HINT: Connection timed out. Check if your database is accessible and the URL is correct.');
-      }
+      if (err.stack) console.error('Stack trace:', err.stack);
+      if (err.code) console.error(`Error Code: ${err.code}`);
       
       if (retries === 0) {
-        console.error('All database connection attempts failed. Falling back to Mock Database Mode.');
+        console.error('CRITICAL: All database connection attempts failed.');
+        console.error('The application will continue in MOCK MODE, but data will NOT be persisted across restarts.');
         setDatabaseConnected(false);
         return;
       }
       console.log(`Retrying in ${delay / 1000} seconds...`);
       await new Promise(resolve => setTimeout(resolve, delay));
+      // Exponentially increase delay for init retries as well
+      delay = Math.min(delay * 1.5, 45000); 
     }
   }
 
@@ -148,6 +147,7 @@ export const initDB = async () => {
         experience TEXT,
         certificates JSONB,
         bio TEXT,
+        views INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -196,6 +196,9 @@ export const initDB = async () => {
     if (!sColumnNames.includes('video_url')) {
       await client.query('ALTER TABLE services ADD COLUMN video_url TEXT');
     }
+    if (!sColumnNames.includes('views')) {
+      await client.query('ALTER TABLE services ADD COLUMN views INTEGER DEFAULT 0');
+    }
 
     // Merge sweets into bakeries if they exist
     await client.query("UPDATE services SET category_id = 'bakeries' WHERE category_id = 'sweets'");
@@ -203,6 +206,7 @@ export const initDB = async () => {
 
     // Seed Categories
     const categoriesSeed = [
+      { id: 'mosques_husseiniyas', ar: 'جوامع وحسينيات', en: 'Mosques & Husseiniyas', icon: 'MoonStar' },
       { id: 'construction_plumbing', ar: 'الإنشائيات والصحيات', en: 'Construction & Plumbing', icon: 'HardHat' },
       { id: 'doctors', ar: 'طبيب', en: 'Doctor', icon: 'Stethoscope' },
       { id: 'pharmacy', ar: 'الصيدلة', en: 'Pharmacy', icon: 'Pill' },
@@ -303,6 +307,17 @@ export const initDB = async () => {
         phone VARCHAR(50) NOT NULL,
         location TEXT,
         image_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Visits Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS visits (
+        id SERIAL PRIMARY KEY,
+        visitor_id VARCHAR(255),
+        user_agent TEXT,
+        ip_address VARCHAR(50),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);

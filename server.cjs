@@ -4,6 +4,13 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
@@ -21,125 +28,180 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// server.ts
-var import_express7 = __toESM(require("express"), 1);
-var import_cors = __toESM(require("cors"), 1);
-var import_dotenv4 = __toESM(require("dotenv"), 1);
-var import_path2 = __toESM(require("path"), 1);
-var import_vite = require("vite");
-
 // src/db/index.ts
-var import_pg = require("pg");
-var import_dotenv = __toESM(require("dotenv"), 1);
-var import_fs = __toESM(require("fs"), 1);
-var import_path = __toESM(require("path"), 1);
-import_dotenv.default.config();
-var databaseUrl = process.env.DATABASE_URL;
-console.log("DEBUG: DATABASE_URL is:", databaseUrl);
-var isDatabaseConnected = !!databaseUrl;
-var setDatabaseConnected = (status) => {
-  isDatabaseConnected = status;
-  if (!status) {
-    console.warn("Database connection failed. Falling back to Mock Database Mode.");
-  }
-};
-if (!databaseUrl) {
-  console.warn("WARNING: DATABASE_URL environment variable is not set. Using Mock Database Mode to prevent errors.");
-}
-var pool = databaseUrl ? new import_pg.Pool({
-  connectionString: databaseUrl,
-  ssl: { rejectUnauthorized: false },
-  connectionTimeoutMillis: 2e3,
-  // Reduced to 2 seconds to fail very fast
-  idleTimeoutMillis: 1e4,
-  max: 10,
-  keepAlive: true,
-  statement_timeout: 3e3,
-  // 3 seconds
-  query_timeout: 3e3,
-  // 3 seconds
-  application_name: "saleen-app"
-}) : null;
-console.log("DEBUG: Pool initialized:", !!pool);
-if (pool) {
-  pool.on("connect", () => {
-    console.log("DEBUG: A new client has connected to the database pool.");
-  });
-  pool.on("error", (err, client) => {
-    console.error("Unexpected error on idle client", err);
-    isDatabaseConnected = false;
-  });
-}
-var MOCK_DB_PATH = import_path.default.join(process.cwd(), "mock-db.json");
-var mockStore = {
-  users: [],
-  services: [],
-  categories: []
-};
-try {
-  if (import_fs.default.existsSync(MOCK_DB_PATH)) {
-    const data = import_fs.default.readFileSync(MOCK_DB_PATH, "utf-8");
-    mockStore = JSON.parse(data);
-  }
-} catch (e) {
-  console.error("Failed to load mock DB:", e);
-}
-var saveMockDb = () => {
-  try {
-    import_fs.default.writeFileSync(MOCK_DB_PATH, JSON.stringify(mockStore, null, 2));
-  } catch (e) {
-    console.error("Failed to save mock DB:", e);
-  }
-};
-var query = async (text, params) => {
-  if (!isDatabaseConnected || !pool) {
-    console.log("MOCK QUERY:", text, params);
-    const lowerText = text.toLowerCase();
-    if (lowerText.includes("select 1")) return { rows: [{ 1: 1 }] };
-    if (lowerText.includes("select exists")) {
-      if (mockStore.services.length > 0 || mockStore.categories.length > 0) {
-        return { rows: [{ exists: true }] };
+var db_exports = {};
+__export(db_exports, {
+  default: () => db_default,
+  isDatabaseConnected: () => isDatabaseConnected,
+  query: () => query,
+  setDatabaseConnected: () => setDatabaseConnected
+});
+var import_pg, import_dotenv, import_fs, import_path, databaseUrl, isDatabaseConnected, setDatabaseConnected, pool, MOCK_DB_PATH, mockStore, saveMockDb, query, queryInMockMode, db_default;
+var init_db = __esm({
+  "src/db/index.ts"() {
+    import_pg = require("pg");
+    import_dotenv = __toESM(require("dotenv"), 1);
+    import_fs = __toESM(require("fs"), 1);
+    import_path = __toESM(require("path"), 1);
+    import_dotenv.default.config();
+    databaseUrl = process.env.DATABASE_URL;
+    if (databaseUrl) {
+      try {
+        const url = new URL(databaseUrl);
+        const maskedUrl = `${url.protocol}//${url.username}:****@${url.host}${url.pathname}${url.search}`;
+        console.log("DEBUG: DATABASE_URL is:", maskedUrl);
+        console.log("DEBUG: Database Host:", url.hostname);
+        console.log("DEBUG: Database Port:", url.port || (url.protocol === "postgres:" ? "5432" : "unknown"));
+      } catch (e) {
+        console.log("DEBUG: DATABASE_URL is set but could not be parsed as a URL.");
       }
-      return { rows: [] };
+    } else {
+      console.log("DEBUG: DATABASE_URL is not set.");
     }
-    if (lowerText.includes("select count(*)")) {
-      if (lowerText.includes("from users")) return { rows: [{ count: mockStore.users.length }] };
-      if (lowerText.includes("from services")) return { rows: [{ count: mockStore.services.length }] };
-      if (lowerText.includes("from categories")) return { rows: [{ count: mockStore.categories.length }] };
-      return { rows: [{ count: 0 }] };
+    isDatabaseConnected = !!databaseUrl;
+    setDatabaseConnected = (status) => {
+      isDatabaseConnected = status;
+      if (!status) {
+        console.error("CRITICAL: Database connection failed. The application may not function correctly.");
+      }
+    };
+    if (!databaseUrl) {
+      console.warn("WARNING: DATABASE_URL environment variable is not set. Using Mock Database Mode (NON-PERSISTENT).");
     }
-    if (lowerText.includes("insert into services")) {
-      const newService = {
-        id: mockStore.services.length + 1,
-        title: params?.[0],
-        description: params?.[1],
-        price: params?.[2],
-        image_url: params?.[3],
-        video_url: params?.[4],
-        category_id: params?.[5],
-        subcategory_id: params?.[6],
-        user_id: params?.[7],
-        phone: params?.[8],
-        lat: params?.[9],
-        lng: params?.[10],
-        service_type: params?.[11],
-        experience: params?.[12],
-        certificates: params?.[13],
-        bio: params?.[14],
-        provider_name: "Mock Provider",
-        created_at: (/* @__PURE__ */ new Date()).toISOString()
+    pool = databaseUrl ? new import_pg.Pool({
+      connectionString: databaseUrl,
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 12e4,
+      // Increased to 120 seconds
+      idleTimeoutMillis: 6e4,
+      // Increased to 60 seconds
+      max: 5,
+      // Further reduced max connections to ensure stability on free tiers
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 1e4,
+      statement_timeout: 12e4,
+      // 120 seconds
+      query_timeout: 12e4,
+      // 120 seconds
+      application_name: "saleen-app",
+      idle_in_transaction_session_timeout: 6e4
+      // 60 seconds
+    }) : null;
+    console.log("DEBUG: Pool initialized:", !!pool);
+    if (pool) {
+      pool.on("connect", () => {
+        console.log("DEBUG: A new client has connected to the database pool.");
+        isDatabaseConnected = true;
+      });
+      pool.on("error", (err) => {
+        console.error("Unexpected error on idle client", err);
+      });
+      const closePool = async () => {
+        console.log("DEBUG: Closing database pool...");
+        try {
+          await pool.end();
+          console.log("DEBUG: Database pool closed.");
+        } catch (err) {
+          console.error("Error closing database pool:", err);
+        }
       };
-      mockStore.services.push(newService);
-      saveMockDb();
-      console.log("MOCK: Added new service:", newService.id);
-      return { rows: [newService] };
+      process.on("SIGTERM", closePool);
+      process.on("SIGINT", closePool);
     }
-    if (lowerText.includes("update services set")) {
-      const id = parseInt(params?.[14]);
-      const index = mockStore.services.findIndex((s) => s.id === id);
-      if (index !== -1) {
-        mockStore.services[index] = {
-          ...mockStore.services[index],
+    MOCK_DB_PATH = import_path.default.join(process.cwd(), "mock-db.json");
+    mockStore = {
+      users: [],
+      services: [],
+      categories: [],
+      visits: []
+    };
+    try {
+      if (import_fs.default.existsSync(MOCK_DB_PATH)) {
+        const data = import_fs.default.readFileSync(MOCK_DB_PATH, "utf-8");
+        const parsed = JSON.parse(data);
+        mockStore = {
+          users: parsed.users || [],
+          services: parsed.services || [],
+          categories: parsed.categories || [],
+          visits: parsed.visits || []
+        };
+      }
+    } catch (e) {
+      console.error("Failed to load mock DB:", e);
+    }
+    saveMockDb = () => {
+      try {
+        import_fs.default.writeFileSync(MOCK_DB_PATH, JSON.stringify(mockStore, null, 2));
+      } catch (e) {
+        console.error("Failed to save mock DB:", e);
+      }
+    };
+    query = async (text, params, retries = 3) => {
+      if (!databaseUrl || !pool || !isDatabaseConnected) {
+        return queryInMockMode(text, params);
+      }
+      let lastError;
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          const startTime = Date.now();
+          const result = await pool.query(text, params);
+          const duration = Date.now() - startTime;
+          if (duration > 2e3) {
+            console.warn(`Slow query detected (${duration}ms):`, text.substring(0, 100));
+          }
+          isDatabaseConnected = true;
+          return result;
+        } catch (err) {
+          lastError = err;
+          const isConnectionError = err.message.toLowerCase().includes("terminated") || err.message.toLowerCase().includes("timeout") || err.message.toLowerCase().includes("connection") || err.message.toLowerCase().includes("pool") || err.message.toLowerCase().includes("econnrefused") || err.message.toLowerCase().includes("econnreset");
+          if (isConnectionError) {
+            console.error(`Database query attempt ${attempt}/${retries} failed:`, err.message);
+            if (err.code) console.error(`Error Code: ${err.code}`);
+            if (attempt < retries) {
+              const delay = Math.pow(2, attempt) * 3e3;
+              console.log(`Retrying query in ${delay / 1e3} seconds...`);
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              continue;
+            }
+            isDatabaseConnected = false;
+            console.error("CRITICAL: Database connection lost after multiple attempts. Falling back to MOCK MODE.");
+          } else {
+            throw err;
+          }
+        }
+      }
+      console.warn("Falling back to MOCK MODE due to database connection failure.");
+      return queryInMockMode(text, params);
+    };
+    queryInMockMode = (text, params) => {
+      console.log("MOCK QUERY EXECUTION:", text);
+      const lowerText = text.toLowerCase();
+      if (lowerText.includes("select 1")) return { rows: [{ 1: 1 }] };
+      if (lowerText.includes("select count(*)")) {
+        if (lowerText.includes("from users")) return { rows: [{ count: mockStore.users.length }] };
+        if (lowerText.includes("from services")) return { rows: [{ count: mockStore.services.length }] };
+        if (lowerText.includes("from categories")) return { rows: [{ count: mockStore.categories.length }] };
+        if (lowerText.includes("from visits")) return { rows: [{ count: mockStore.visits.length }] };
+        return { rows: [{ count: 0 }] };
+      }
+      if (lowerText.includes("insert into visits")) {
+        const newVisit = {
+          id: mockStore.visits.length + 1,
+          visitor_id: params?.[0],
+          user_agent: params?.[1],
+          ip_address: params?.[2],
+          created_at: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        mockStore.visits.push(newVisit);
+        saveMockDb();
+        return { rows: [newVisit] };
+      }
+      if (lowerText.includes("from visits")) {
+        return { rows: mockStore.visits };
+      }
+      if (lowerText.includes("insert into services")) {
+        const newService = {
+          id: mockStore.services.length + 1,
           title: params?.[0],
           description: params?.[1],
           price: params?.[2],
@@ -147,454 +209,83 @@ var query = async (text, params) => {
           video_url: params?.[4],
           category_id: params?.[5],
           subcategory_id: params?.[6],
-          phone: params?.[7],
-          lat: params?.[8],
-          lng: params?.[9],
-          service_type: params?.[10],
-          experience: params?.[11],
-          certificates: params?.[12],
-          bio: params?.[13]
+          user_id: params?.[7],
+          phone: params?.[8],
+          lat: params?.[9],
+          lng: params?.[10],
+          service_type: params?.[11],
+          experience: params?.[12],
+          certificates: params?.[13],
+          bio: params?.[14],
+          provider_name: params?.[0] || "",
+          created_at: (/* @__PURE__ */ new Date()).toISOString()
         };
+        mockStore.services.push(newService);
         saveMockDb();
-        console.log("MOCK: Updated service:", id);
-        return { rows: [mockStore.services[index]] };
+        return { rows: [newService] };
+      }
+      if (lowerText.includes("update services set")) {
+        const id = parseInt(params?.[14]);
+        const index = mockStore.services.findIndex((s) => s.id === id);
+        if (index !== -1) {
+          mockStore.services[index] = {
+            ...mockStore.services[index],
+            title: params?.[0],
+            description: params?.[1],
+            price: params?.[2],
+            image_url: params?.[3],
+            video_url: params?.[4],
+            category_id: params?.[5],
+            subcategory_id: params?.[6],
+            phone: params?.[7],
+            lat: params?.[8],
+            lng: params?.[9],
+            service_type: params?.[10],
+            experience: params?.[11],
+            certificates: params?.[12],
+            bio: params?.[13]
+          };
+          saveMockDb();
+          return { rows: [mockStore.services[index]] };
+        }
+        return { rows: [] };
+      }
+      if (lowerText.includes("delete from services")) {
+        const id = parseInt(params?.[0]);
+        mockStore.services = mockStore.services.filter((s) => s.id !== id);
+        saveMockDb();
+        return { rows: [] };
+      }
+      if (lowerText.includes("from services")) {
+        return { rows: mockStore.services };
+      }
+      if (lowerText.includes("from users")) {
+        if (lowerText.includes("where phone = $1")) {
+          const user = mockStore.users.find((u) => u.phone === params?.[0]);
+          return { rows: user ? [user] : [] };
+        }
+        if (lowerText.includes("where id = $1")) {
+          const user = mockStore.users.find((u) => u.id === params?.[0]);
+          return { rows: user ? [user] : [] };
+        }
+        return { rows: mockStore.users };
+      }
+      if (lowerText.includes("from categories")) {
+        return { rows: mockStore.categories };
       }
       return { rows: [] };
-    }
-    if (lowerText.includes("delete from services")) {
-      const id = parseInt(params?.[0]);
-      mockStore.services = mockStore.services.filter((s) => s.id !== id);
-      saveMockDb();
-      console.log("MOCK: Deleted service:", id);
-      return { rows: [] };
-    }
-    if (lowerText.includes("from services")) {
-      return { rows: mockStore.services };
-    }
-    if (lowerText.includes("insert into users")) {
-      const newUser = {
-        id: mockStore.users.length + 1,
-        name: params?.[0],
-        phone: params?.[1],
-        email: params?.[2],
-        password: params?.[3],
-        google_id: params?.[4],
-        role: params?.[5] || "user",
-        status: "active",
-        is_verified: false,
-        created_at: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      mockStore.users.push(newUser);
-      saveMockDb();
-      return { rows: [newUser] };
-    }
-    if (lowerText.includes("from users")) {
-      if (lowerText.includes("where phone = $1")) {
-        const user = mockStore.users.find((u) => u.phone === params?.[0]);
-        return { rows: user ? [user] : [] };
-      }
-      if (lowerText.includes("where id = $1")) {
-        const user = mockStore.users.find((u) => u.id === params?.[0]);
-        return { rows: user ? [user] : [] };
-      }
-      return { rows: mockStore.users };
-    }
-    if (lowerText.includes("insert into categories")) {
-      const newCategory = {
-        id: params?.[0],
-        name_ar: params?.[1],
-        name_en: params?.[2],
-        icon: params?.[3],
-        parent_id: params?.[4],
-        created_at: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      mockStore.categories.push(newCategory);
-      saveMockDb();
-      return { rows: [newCategory] };
-    }
-    if (lowerText.includes("from categories")) {
-      return { rows: mockStore.categories };
-    }
-    return { rows: [] };
-  }
-  try {
-    if (!pool) throw new Error("Pool not initialized");
-    const startTime = Date.now();
-    const queryPromise = pool.query(text, params);
-    const timeoutPromise = new Promise(
-      (_, reject) => setTimeout(() => reject(new Error("Query execution timeout (3s)")), 3e3)
-    );
-    const result = await Promise.race([queryPromise, timeoutPromise]);
-    const duration = Date.now() - startTime;
-    if (duration > 2e3) {
-      console.warn(`Slow query detected (${duration}ms):`, text.substring(0, 100));
-    }
-    return result;
-  } catch (err) {
-    console.error("Database query error:", err.message);
-    const isConnectionError = err.message.toLowerCase().includes("terminated") || err.message.toLowerCase().includes("timeout") || err.message.toLowerCase().includes("connection") || err.message.toLowerCase().includes("pool") || err.message.toLowerCase().includes("econnrefused") || err.message.toLowerCase().includes("ehostunreach") || err.message.toLowerCase().includes("socket hang up");
-    if (isConnectionError) {
-      console.warn("Database connection issue detected:", err.message);
-      console.warn("Switching to Mock Database Mode to prevent app freeze.");
-      isDatabaseConnected = false;
-      return queryInMockMode(text, params);
-    }
-    throw err;
-  }
-};
-var queryInMockMode = (text, params) => {
-  console.log("MOCK QUERY EXECUTION:", text);
-  const lowerText = text.toLowerCase();
-  if (lowerText.includes("select 1")) return { rows: [{ 1: 1 }] };
-  if (lowerText.includes("select count(*)")) {
-    if (lowerText.includes("from users")) return { rows: [{ count: mockStore.users.length }] };
-    if (lowerText.includes("from services")) return { rows: [{ count: mockStore.services.length }] };
-    if (lowerText.includes("from categories")) return { rows: [{ count: mockStore.categories.length }] };
-    return { rows: [{ count: 0 }] };
-  }
-  if (lowerText.includes("insert into services")) {
-    const newService = {
-      id: mockStore.services.length + 1,
-      title: params?.[0],
-      description: params?.[1],
-      price: params?.[2],
-      image_url: params?.[3],
-      video_url: params?.[4],
-      category_id: params?.[5],
-      subcategory_id: params?.[6],
-      user_id: params?.[7],
-      phone: params?.[8],
-      lat: params?.[9],
-      lng: params?.[10],
-      service_type: params?.[11],
-      experience: params?.[12],
-      certificates: params?.[13],
-      bio: params?.[14],
-      provider_name: "Mock Provider",
-      created_at: (/* @__PURE__ */ new Date()).toISOString()
     };
-    mockStore.services.push(newService);
-    return { rows: [newService] };
+    db_default = pool;
   }
-  if (lowerText.includes("update services set")) {
-    const id = parseInt(params?.[14]);
-    const index = mockStore.services.findIndex((s) => s.id === id);
-    if (index !== -1) {
-      mockStore.services[index] = {
-        ...mockStore.services[index],
-        title: params?.[0],
-        description: params?.[1],
-        price: params?.[2],
-        image_url: params?.[3],
-        video_url: params?.[4],
-        category_id: params?.[5],
-        subcategory_id: params?.[6],
-        phone: params?.[7],
-        lat: params?.[8],
-        lng: params?.[9],
-        service_type: params?.[10],
-        experience: params?.[11],
-        certificates: params?.[12],
-        bio: params?.[13]
-      };
-      return { rows: [mockStore.services[index]] };
-    }
-    return { rows: [] };
-  }
-  if (lowerText.includes("delete from services")) {
-    const id = parseInt(params?.[0]);
-    mockStore.services = mockStore.services.filter((s) => s.id !== id);
-    return { rows: [] };
-  }
-  if (lowerText.includes("from services")) {
-    return { rows: mockStore.services };
-  }
-  if (lowerText.includes("from users")) {
-    if (lowerText.includes("where phone = $1")) {
-      const user = mockStore.users.find((u) => u.phone === params?.[0]);
-      return { rows: user ? [user] : [] };
-    }
-    if (lowerText.includes("where id = $1")) {
-      const user = mockStore.users.find((u) => u.id === params?.[0]);
-      return { rows: user ? [user] : [] };
-    }
-    return { rows: mockStore.users };
-  }
-  if (lowerText.includes("from categories")) {
-    return { rows: mockStore.categories };
-  }
-  return { rows: [] };
-};
-var db_default = pool;
+});
 
-// src/db/init.ts
-var initDB = async () => {
-  if (!process.env.DATABASE_URL) {
-    console.error("Skipping database initialization: DATABASE_URL is not set.");
-    return;
-  }
-  let client;
-  let retries = 1;
-  let delay = 1e3;
-  const totalRetries = 1;
-  while (retries > 0) {
-    try {
-      console.log(`Attempting to connect to the database (Retries left: ${retries})...`);
-      client = await db_default.connect();
-      console.log("Successfully connected to the database.");
-      setDatabaseConnected(true);
-      break;
-    } catch (err) {
-      retries--;
-      console.error(`Failed to connect to the database (Attempt ${totalRetries - retries}/${totalRetries}):`, err.message);
-      if (err.message.includes("self signed certificate")) {
-        console.error("HINT: This might be an SSL issue. Ensure your connection string or pool config is correct for Supabase.");
-      }
-      if (err.message.includes("timeout")) {
-        console.error("HINT: Connection timed out. Check if your database is accessible and the URL is correct.");
-      }
-      if (retries === 0) {
-        console.error("All database connection attempts failed. Falling back to Mock Database Mode.");
-        setDatabaseConnected(false);
-        return;
-      }
-      console.log(`Retrying in ${delay / 1e3} seconds...`);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-  if (!client) return;
-  try {
-    await client.query("BEGIN");
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        phone VARCHAR(50) UNIQUE,
-        email VARCHAR(255) UNIQUE,
-        password VARCHAR(255),
-        google_id VARCHAR(255) UNIQUE,
-        is_verified BOOLEAN DEFAULT FALSE,
-        status VARCHAR(50) DEFAULT 'active',
-        role VARCHAR(50) DEFAULT 'user',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    const userColumns = await client.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name = 'users'
-    `);
-    const uColumnNames = userColumns.rows.map((r) => r.column_name);
-    if (!uColumnNames.includes("google_id")) {
-      await client.query("ALTER TABLE users ADD COLUMN google_id VARCHAR(255) UNIQUE");
-    }
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS categories (
-        id VARCHAR(50) PRIMARY KEY,
-        name_ar VARCHAR(255) NOT NULL,
-        name_en VARCHAR(255) NOT NULL,
-        icon VARCHAR(255),
-        parent_id VARCHAR(50) REFERENCES categories(id),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    const categoryColumns = await client.query(`
-      SELECT column_name, data_type 
-      FROM information_schema.columns 
-      WHERE table_name = 'categories'
-    `);
-    const columnNames = categoryColumns.rows.map((r) => r.column_name);
-    const idColumn = categoryColumns.rows.find((r) => r.column_name === "id");
-    if (!columnNames.includes("parent_id")) {
-      await client.query("ALTER TABLE categories ADD COLUMN parent_id VARCHAR(50) REFERENCES categories(id)");
-    }
-    if (idColumn && (idColumn.data_type === "integer" || idColumn.data_type === "bigint")) {
-      console.log("Migrating categories.id from integer to varchar...");
-      await client.query("ALTER TABLE services DROP CONSTRAINT IF EXISTS services_category_id_fkey");
-      await client.query("ALTER TABLE categories ALTER COLUMN id TYPE VARCHAR(50)");
-      await client.query("ALTER TABLE services ALTER COLUMN category_id TYPE VARCHAR(50)");
-      await client.query("ALTER TABLE services ADD CONSTRAINT services_category_id_fkey FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE");
-    }
-    if (!columnNames.includes("name_ar")) {
-      await client.query("ALTER TABLE categories ADD COLUMN name_ar VARCHAR(255) DEFAULT ''");
-      if (columnNames.includes("name")) {
-        await client.query("UPDATE categories SET name_ar = name");
-      }
-    }
-    if (!columnNames.includes("name_en")) {
-      await client.query("ALTER TABLE categories ADD COLUMN name_en VARCHAR(255) DEFAULT ''");
-      if (columnNames.includes("name")) {
-        await client.query("UPDATE categories SET name_en = name");
-      }
-    }
-    if (columnNames.includes("name")) {
-      await client.query("ALTER TABLE categories DROP COLUMN name");
-    }
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS services (
-        id SERIAL PRIMARY KEY,
-        title VARCHAR(255) NOT NULL,
-        description TEXT,
-        price DECIMAL(10, 2),
-        image_url TEXT,
-        category_id VARCHAR(50) REFERENCES categories(id) ON DELETE CASCADE,
-        subcategory_id VARCHAR(50),
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        phone VARCHAR(50),
-        lat DOUBLE PRECISION,
-        lng DOUBLE PRECISION,
-        service_type VARCHAR(50),
-        experience TEXT,
-        certificates JSONB,
-        bio TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    const serviceColumns = await client.query(`
-      SELECT column_name, data_type 
-      FROM information_schema.columns 
-      WHERE table_name = 'services'
-    `);
-    const sColumnNames = serviceColumns.rows.map((r) => r.column_name);
-    const categoryIdColumn = serviceColumns.rows.find((r) => r.column_name === "category_id");
-    if (categoryIdColumn && (categoryIdColumn.data_type === "integer" || categoryIdColumn.data_type === "bigint")) {
-      console.log("Migrating services.category_id from integer to varchar...");
-      await client.query("ALTER TABLE services DROP CONSTRAINT IF EXISTS services_category_id_fkey");
-      await client.query("ALTER TABLE services ALTER COLUMN category_id TYPE VARCHAR(50)");
-      await client.query("ALTER TABLE services ADD CONSTRAINT services_category_id_fkey FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE");
-    }
-    if (!sColumnNames.includes("subcategory_id")) {
-      await client.query("ALTER TABLE services ADD COLUMN subcategory_id VARCHAR(50)");
-    }
-    if (!sColumnNames.includes("phone")) {
-      await client.query("ALTER TABLE services ADD COLUMN phone VARCHAR(50)");
-    }
-    if (!sColumnNames.includes("lat")) {
-      await client.query("ALTER TABLE services ADD COLUMN lat DOUBLE PRECISION");
-    }
-    if (!sColumnNames.includes("lng")) {
-      await client.query("ALTER TABLE services ADD COLUMN lng DOUBLE PRECISION");
-    }
-    if (!sColumnNames.includes("service_type")) {
-      await client.query("ALTER TABLE services ADD COLUMN service_type VARCHAR(50)");
-    }
-    if (!sColumnNames.includes("experience")) {
-      await client.query("ALTER TABLE services ADD COLUMN experience TEXT");
-    }
-    if (!sColumnNames.includes("certificates")) {
-      await client.query("ALTER TABLE services ADD COLUMN certificates JSONB");
-    }
-    if (!sColumnNames.includes("bio")) {
-      await client.query("ALTER TABLE services ADD COLUMN bio TEXT");
-    }
-    if (!sColumnNames.includes("video_url")) {
-      await client.query("ALTER TABLE services ADD COLUMN video_url TEXT");
-    }
-    await client.query("UPDATE services SET category_id = 'bakeries' WHERE category_id = 'sweets'");
-    await client.query("DELETE FROM categories WHERE id = 'sweets'");
-    const categoriesSeed = [
-      { id: "construction_plumbing", ar: "\u0627\u0644\u0625\u0646\u0634\u0627\u0626\u064A\u0627\u062A \u0648\u0627\u0644\u0635\u062D\u064A\u0627\u062A", en: "Construction & Plumbing", icon: "HardHat" },
-      { id: "doctors", ar: "\u0637\u0628\u064A\u0628", en: "Doctor", icon: "Stethoscope" },
-      { id: "pharmacy", ar: "\u0627\u0644\u0635\u064A\u062F\u0644\u0629", en: "Pharmacy", icon: "Pill" },
-      { id: "welding", ar: "\u0627\u0644\u0644\u062D\u0627\u0645", en: "Welding", icon: "Flame" },
-      { id: "agriculture", ar: "\u0627\u0644\u0632\u0631\u0627\u0639\u0629", en: "Agriculture", icon: "Sprout" },
-      { id: "carpentry", ar: "\u0646\u062C\u0627\u0631 \u0628\u064A\u0648\u062A", en: "Carpentry", icon: "Hammer" },
-      { id: "mechanics", ar: "\u0635\u064A\u0627\u0646\u0629 \u0633\u064A\u0627\u0631\u0627\u062A", en: "Car Maintenance", icon: "Car" },
-      { id: "plumbers", ar: "\u0627\u0644\u0633\u0628\u0627\u0643\u0629", en: "Plumbing", icon: "Droplet" },
-      { id: "electricity", ar: "\u0627\u0644\u0643\u0647\u0631\u0628\u0627\u0621", en: "Electricity", icon: "Zap" },
-      { id: "hvac", ar: "\u0627\u0644\u062A\u0628\u0631\u064A\u062F \u0648\u0627\u0644\u062A\u0643\u064A\u064A\u0641", en: "HVAC", icon: "Snowflake" },
-      { id: "construction", ar: "\u0627\u0644\u0628\u0646\u0627\u0621 \u0648\u0627\u0644\u062F\u064A\u0643\u0648\u0631", en: "Construction & Decor", icon: "PaintRoller" },
-      { id: "engineering", ar: "\u0642\u0633\u0645 \u0627\u0644\u0647\u0646\u062F\u0633\u0629", en: "Engineering", icon: "Building2" },
-      { id: "mobiles", ar: "\u0627\u0644\u0645\u0648\u0628\u0627\u064A\u0644\u0627\u062A", en: "Mobiles", icon: "Smartphone" },
-      { id: "bikes", ar: "\u0627\u0644\u062F\u0631\u0627\u062C\u0627\u062A", en: "Bikes", icon: "Bike" },
-      { id: "clothing", ar: "\u0627\u0644\u0645\u0644\u0627\u0628\u0633", en: "Clothing", icon: "Shirt" },
-      { id: "barber", ar: "\u0627\u0644\u062D\u0644\u0627\u0642\u0629", en: "Barber & Salon", icon: "Scissors" },
-      { id: "food", ar: "\u0627\u0644\u0645\u0648\u0627\u062F \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0648\u0627\u0644\u062E\u062F\u0645\u0627\u062A \u0627\u0644\u064A\u0648\u0645\u064A\u0629", en: "Food & Daily Services", icon: "ShoppingBag" },
-      { id: "medical_equipment", ar: "\u0623\u062C\u0647\u0632\u0629 \u0648\u0645\u0639\u062F\u0627\u062A \u0637\u0628\u064A\u0629", en: "Medical Equipment & Devices", icon: "Microscope" },
-      { id: "hotels", ar: "\u0641\u0646\u0627\u062F\u0642", en: "Hotels", icon: "Hotel" },
-      { id: "restaurants", ar: "\u0645\u0637\u0627\u0639\u0645", en: "Restaurants", icon: "Utensils" },
-      { id: "bakeries", ar: "\u0627\u0644\u0623\u0641\u0631\u0627\u0646\u060C \u0627\u0644\u0645\u062E\u0627\u0628\u0632 \u0648\u0627\u0644\u062D\u0644\u0648\u064A\u0627\u062A", en: "Bakeries, Ovens & Sweets", icon: "Croissant" },
-      { id: "universities", ar: "\u0627\u0644\u062C\u0627\u0645\u0639\u0627\u062A", en: "Universities", icon: "GraduationCap", parent_id: null },
-      { id: "universities_gov", ar: "\u062C\u0627\u0645\u0639\u0627\u062A \u062D\u0643\u0648\u0645\u064A\u0629", en: "Government Universities", icon: "Building2", parent_id: "universities" },
-      { id: "universities_priv", ar: "\u062C\u0627\u0645\u0639\u0627\u062A \u0623\u0647\u0644\u064A\u0629", en: "Private Universities", icon: "Building2", parent_id: "universities" },
-      { id: "colleges", ar: "\u0643\u0644\u064A\u0627\u062A", en: "Colleges", icon: "BookOpen", parent_id: "universities_gov" },
-      { id: "institutes", ar: "\u0645\u0639\u0627\u0647\u062F", en: "Institutes", icon: "BookOpen", parent_id: "universities_gov" },
-      { id: "civil_defense", ar: "\u0627\u0644\u062F\u0641\u0627\u0639 \u0627\u0644\u0645\u062F\u0646\u064A", en: "Civil Defense", icon: "ShieldAlert" },
-      { id: "police", ar: "\u0645\u0631\u0627\u0643\u0632 \u0627\u0644\u0634\u0631\u0637\u0629", en: "Police Stations", icon: "Shield" },
-      { id: "gas_stations", ar: "\u0645\u062D\u0637\u0627\u062A \u0627\u0644\u0648\u0642\u0648\u062F", en: "Gas Stations", icon: "Fuel" },
-      { id: "football_fields", ar: "\u0645\u0644\u0627\u0639\u0628 \u0643\u0631\u0629 \u0627\u0644\u0642\u062F\u0645", en: "Football Fields", icon: "Trophy" }
-    ];
-    for (const cat of categoriesSeed) {
-      await client.query(`
-        INSERT INTO categories (id, name_ar, name_en, icon)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (id) DO UPDATE SET 
-          name_ar = EXCLUDED.name_ar,
-          name_en = EXCLUDED.name_en,
-          icon = EXCLUDED.icon
-      `, [cat.id, cat.ar, cat.en, cat.icon]);
-    }
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS orders (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        service_id INTEGER REFERENCES services(id) ON DELETE CASCADE,
-        status VARCHAR(50) DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS reviews (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        service_id INTEGER REFERENCES services(id) ON DELETE CASCADE,
-        rating INTEGER CHECK (rating >= 1 AND rating <= 5),
-        comment TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS gold_types (
-        id SERIAL PRIMARY KEY,
-        name_ar VARCHAR(255) NOT NULL,
-        name_en VARCHAR(255) NOT NULL,
-        image_url TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS jewelry_products (
-        id SERIAL PRIMARY KEY,
-        gold_type_id INTEGER REFERENCES gold_types(id) ON DELETE CASCADE,
-        title VARCHAR(255) NOT NULL,
-        description TEXT,
-        price DECIMAL(10, 2),
-        weight DECIMAL(10, 2),
-        karat INTEGER,
-        image_url TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS merchants (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        phone VARCHAR(50) NOT NULL,
-        location TEXT,
-        image_url TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    await client.query("COMMIT");
-    console.log("Database tables initialized successfully.");
-  } catch (error) {
-    if (client) await client.query("ROLLBACK");
-    console.error("Error initializing database tables:", error);
-    setDatabaseConnected(false);
-  } finally {
-    if (client) client.release();
-  }
-};
+// server.ts
+var import_express8 = __toESM(require("express"), 1);
+var import_cors = __toESM(require("cors"), 1);
+var import_dotenv4 = __toESM(require("dotenv"), 1);
+var import_path2 = __toESM(require("path"), 1);
+var import_vite = require("vite");
+init_db();
 
 // src/routes/authRoutes.ts
 var import_express = require("express");
@@ -602,6 +293,7 @@ var import_express = require("express");
 // src/controllers/authController.ts
 var import_bcrypt = __toESM(require("bcrypt"), 1);
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
+init_db();
 var import_dotenv2 = __toESM(require("dotenv"), 1);
 import_dotenv2.default.config();
 var register = async (req, res) => {
@@ -846,6 +538,7 @@ var authRoutes_default = router;
 var import_express2 = require("express");
 
 // src/controllers/serviceController.ts
+init_db();
 var createService = async (req, res) => {
   try {
     const {
@@ -892,6 +585,22 @@ var createService = async (req, res) => {
     res.status(201).json(newService.rows[0]);
   } catch (error) {
     console.error("Error creating service:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+var incrementViews = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query(
+      "UPDATE services SET views = views + 1 WHERE id = $1 RETURNING views",
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Service not found" });
+    }
+    res.json({ views: result.rows[0].views });
+  } catch (error) {
+    console.error("Error incrementing views:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -1036,6 +745,7 @@ var updateService = async (req, res) => {
 var router2 = (0, import_express2.Router)();
 router2.post("/", optionalAuth, createService);
 router2.get("/", getServices);
+router2.patch("/:id/view", incrementViews);
 router2.put("/:id", authenticateToken, isAdmin, updateService);
 router2.delete("/:id", authenticateToken, isAdmin, deleteService);
 var serviceRoutes_default = router2;
@@ -1044,6 +754,7 @@ var serviceRoutes_default = router2;
 var import_express3 = require("express");
 
 // src/controllers/orderController.ts
+init_db();
 var createOrder = async (req, res) => {
   try {
     const { service_id } = req.body;
@@ -1089,6 +800,7 @@ var orderRoutes_default = router3;
 var import_express4 = require("express");
 
 // src/controllers/reviewController.ts
+init_db();
 var createReview = async (req, res) => {
   try {
     const { service_id, rating, comment } = req.body;
@@ -1139,6 +851,7 @@ var reviewRoutes_default = router4;
 var import_express5 = require("express");
 
 // src/controllers/categoryController.ts
+init_db();
 var createCategory = async (req, res) => {
   try {
     const { id, name_ar, name_en, icon } = req.body;
@@ -1216,6 +929,7 @@ var categoryRoutes_default = router5;
 var import_express6 = require("express");
 
 // src/controllers/userController.ts
+init_db();
 var getAllUsers = async (req, res) => {
   try {
     const result = await query("SELECT id, name, phone, email, role, status, is_verified, created_at FROM users ORDER BY created_at DESC");
@@ -1256,11 +970,13 @@ var getStats = async (req, res) => {
     const serviceCount = await query("SELECT COUNT(*) FROM services");
     const orderCount = await query("SELECT COUNT(*) FROM orders");
     const activeOrders = await query("SELECT COUNT(*) FROM orders WHERE status = 'pending'");
+    const visitorCount = await query("SELECT COUNT(*) FROM visits");
     res.json({
       users: parseInt(userCount.rows[0].count),
       services: parseInt(serviceCount.rows[0].count),
       orders: parseInt(orderCount.rows[0].count),
-      activeOrders: parseInt(activeOrders.rows[0].count)
+      activeOrders: parseInt(activeOrders.rows[0].count),
+      visitors: parseInt(visitorCount.rows[0].count)
     });
   } catch (error) {
     console.error("Error fetching stats:", error);
@@ -1276,30 +992,67 @@ router6.patch("/:id/status", authenticateToken, isAdmin, updateUserStatus);
 router6.patch("/:id/verify", authenticateToken, isAdmin, toggleUserVerification);
 var userRoutes_default = router6;
 
+// src/routes/visitRoutes.ts
+var import_express7 = __toESM(require("express"), 1);
+init_db();
+var router7 = import_express7.default.Router();
+router7.post("/", async (req, res) => {
+  const { visitor_id } = req.body;
+  const userAgent = req.headers["user-agent"];
+  const ipAddress = req.ip;
+  try {
+    await query(
+      "INSERT INTO visits (visitor_id, user_agent, ip_address) VALUES ($1, $2, $3)",
+      [visitor_id, userAgent, ipAddress]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error recording visit:", err);
+    res.status(500).json({ error: "Failed to record visit" });
+  }
+});
+router7.get("/", async (req, res) => {
+  try {
+    const result = await query("SELECT * FROM visits ORDER BY created_at DESC");
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching visits:", err);
+    res.status(500).json({ error: "Failed to fetch visits" });
+  }
+});
+router7.delete("/clear", async (req, res) => {
+  try {
+    await query("DELETE FROM visits");
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error clearing visits:", err);
+    res.status(500).json({ error: "Failed to clear visits" });
+  }
+});
+var visitRoutes_default = router7;
+
 // server.ts
 import_dotenv4.default.config();
 async function startServer() {
-  const app = (0, import_express7.default)();
+  const app = (0, import_express8.default)();
   const PORT = parseInt(process.env.PORT || "3000", 10);
   app.use((0, import_cors.default)());
-  app.use(import_express7.default.json({ limit: "50mb" }));
-  app.use(import_express7.default.urlencoded({ limit: "50mb", extended: true }));
-  console.log("Initializing DB...");
-  initDB().then(() => {
-    console.log("DB initialization finished.");
-  }).catch((err) => {
-    console.error("DB initialization failed:", err);
-  });
+  app.use(import_express8.default.json({ limit: "50mb" }));
+  app.use(import_express8.default.urlencoded({ limit: "50mb", extended: true }));
   app.use("/api/auth", authRoutes_default);
   app.use("/api/services", serviceRoutes_default);
   app.use("/api/orders", orderRoutes_default);
   app.use("/api/reviews", reviewRoutes_default);
   app.use("/api/categories", categoryRoutes_default);
   app.use("/api/users", userRoutes_default);
+  app.use("/api/visits", visitRoutes_default);
   app.get("/api/health", async (req, res) => {
-    const isMock = !process.env.DATABASE_URL;
+    const { isDatabaseConnected: isDatabaseConnected2 } = await Promise.resolve().then(() => (init_db(), db_exports));
+    const isMock = !process.env.DATABASE_URL || !isDatabaseConnected2;
     try {
-      await query("SELECT 1");
+      if (!isMock) {
+        await query("SELECT 1");
+      }
       res.json({
         status: "ok",
         database: isMock ? "mock" : "connected",
@@ -1310,7 +1063,7 @@ async function startServer() {
         status: "error",
         database: isMock ? "mock" : "disconnected",
         message: err instanceof Error ? err.message : "Unknown error",
-        isMock
+        isMock: true
       });
     }
   });
@@ -1322,7 +1075,7 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = import_path2.default.join(process.cwd(), "dist");
-    app.use(import_express7.default.static(distPath));
+    app.use(import_express8.default.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(import_path2.default.join(distPath, "index.html"));
     });

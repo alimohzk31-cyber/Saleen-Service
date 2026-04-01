@@ -2,6 +2,16 @@ import { Category, Provider } from '../types';
 
 export const categories: Category[] = [
   {
+    id: 'mosques_husseiniyas',
+    iconName: 'MoonStar',
+    label: { ar: 'جوامع وحسينيات', en: 'Mosques & Husseiniyas' },
+    color: 'from-emerald-600 to-teal-800',
+    subcategories: [
+      { id: 'mosques', label: { ar: 'جوامع', en: 'Mosques' } },
+      { id: 'husseiniyas', label: { ar: 'حسينيات', en: 'Husseiniyas' } }
+    ]
+  },
+  {
     id: 'official_departments',
     iconName: 'Building',
     label: { ar: 'الدوائر الرسمية', en: 'Official Departments' },

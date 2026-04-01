@@ -3,7 +3,7 @@ import { UserProfile } from '../types';
 
 export function UserProfileForm({ onComplete }: { onComplete: () => void }) {
   const [formData, setFormData] = useState({
-    name: '', birth: '', job: '', phone: '', city: '', notes: ''
+    name: '', age: '', job: '', phone: '', city: '', notes: ''
   });
   const [image, setImage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,15 +40,43 @@ export function UserProfileForm({ onComplete }: { onComplete: () => void }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow-md">
+    <form 
+      id="user-profile-form"
+      className="p-4 bg-white dark:bg-slate-800 rounded-xl shadow-md"
+    >
       <h2 className="text-xl font-bold mb-4">إنشاء الحساب</h2>
-      <input type="text" placeholder="الاسم الثلاثي" className="w-full p-2 mb-2 border rounded" onChange={e => setFormData({...formData, name: e.target.value})} required />
-      <input type="text" placeholder="تاريخ الميلاد" className="w-full p-2 mb-2 border rounded" onChange={e => setFormData({...formData, birth: e.target.value})} required />
-      <input type="text" placeholder="المهنة الحالية" className="w-full p-2 mb-2 border rounded" onChange={e => setFormData({...formData, job: e.target.value})} required />
-      <input type="text" placeholder="رقم الهاتف" className="w-full p-2 mb-2 border rounded" onChange={e => setFormData({...formData, phone: e.target.value})} required />
-      <input type="text" placeholder="المدينة" className="w-full p-2 mb-2 border rounded" onChange={e => setFormData({...formData, city: e.target.value})} required />
-      <textarea placeholder="ملاحظات" className="w-full p-2 mb-2 border rounded" onChange={e => setFormData({...formData, notes: e.target.value})} />
-      <button type="submit" disabled={isSubmitting} className="w-full p-2 bg-blue-600 text-white rounded">
+      <input type="text" placeholder="الاسم الثلاثي" className="w-full p-2 mb-2 border rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white" onChange={e => setFormData({...formData, name: e.target.value})} required />
+      <input 
+        type="number" 
+        placeholder="العمر" 
+        className="w-full p-2 mb-2 border rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white" 
+        value={formData.age}
+        onChange={e => {
+          let val = e.target.value;
+          if (val.length > 2) val = val.slice(0, 2);
+          setFormData({...formData, age: val});
+        }} 
+        onBlur={e => {
+          let val = e.target.value;
+          if (val) {
+            const num = parseInt(val);
+            if (num > 99) val = "99";
+            if (num < 1) val = "1";
+            setFormData({...formData, age: val});
+          }
+        }}
+        required 
+      />
+      <input type="text" placeholder="المهنة الحالية" className="w-full p-2 mb-2 border rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white" onChange={e => setFormData({...formData, job: e.target.value})} required />
+      <input type="text" placeholder="رقم الهاتف (اختياري)" className="w-full p-2 mb-2 border rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white" onChange={e => setFormData({...formData, phone: e.target.value})} />
+      <input type="text" placeholder="المدينة (اختياري)" className="w-full p-2 mb-2 border rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white" onChange={e => setFormData({...formData, city: e.target.value})} />
+      <textarea placeholder="ملاحظات" className="w-full p-2 mb-2 border rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-white" onChange={e => setFormData({...formData, notes: e.target.value})} />
+      <button type="button" onClick={(e) => {
+        const form = document.getElementById('user-profile-form') as HTMLFormElement;
+        if (form && form.reportValidity()) {
+          handleSubmit(e);
+        }
+      }} disabled={isSubmitting} className="w-full p-2 bg-blue-600 text-white rounded">
         {isSubmitting ? 'جاري الحفظ...' : 'إنشاء الحساب'}
       </button>
     </form>

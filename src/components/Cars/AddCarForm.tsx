@@ -73,7 +73,7 @@ export function AddCarForm({ onClose, language, currentUser }: Props) {
             {language === 'ar' ? 'إضافة سيارة للبيع' : 'Add Car for Sale'}
           </h2>
           <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-            <X className="w-6 h-6" />
+            <X className="w-6 h-6 text-slate-900 dark:text-white" />
           </button>
         </div>
 
@@ -87,7 +87,10 @@ export function AddCarForm({ onClose, language, currentUser }: Props) {
               <p className="opacity-60">{language === 'ar' ? 'سيتم مراجعة إعلانك ونشره قريباً.' : 'Your ad will be reviewed and published soon.'}</p>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-8">
+            <form 
+              id="add-car-form"
+              className="space-y-8"
+            >
               {/* Image Upload Placeholder */}
               <div className="relative h-48 rounded-3xl bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center gap-4 group cursor-pointer hover:border-primary transition-colors">
                 <Camera className="w-12 h-12 opacity-20 group-hover:opacity-100 group-hover:text-primary transition-all" />
@@ -217,7 +220,13 @@ export function AddCarForm({ onClose, language, currentUser }: Props) {
                   {language === 'ar' ? 'إلغاء' : 'Cancel'}
                 </button>
                 <button 
-                  type="submit"
+                  type="button"
+                  onClick={(e) => {
+                    const form = document.getElementById('add-car-form') as HTMLFormElement;
+                    if (form && form.reportValidity()) {
+                      handleSubmit(e);
+                    }
+                  }}
                   disabled={isSubmitting}
                   className="flex-1 py-4 rounded-2xl bg-primary text-white font-black shadow-lg shadow-primary/20 hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
                 >

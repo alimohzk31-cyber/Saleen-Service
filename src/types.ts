@@ -39,6 +39,7 @@ export interface Provider {
   approximatePrices?: { ar: string; en: string };
   isEmergency24h?: boolean;
   createdAt?: number;
+  views?: number;
 }
 
 export interface Car {
@@ -65,9 +66,15 @@ export interface AppSettings {
   enableMaps?: boolean;
   showSettingsIcon?: boolean;
   showInfoIcon?: boolean;
+  showEmergencyIcon?: boolean;
+  showAdminIcon?: boolean;
+  emergencyNumber?: string;
+  welcomeTitle?: { ar: string; en: string };
+  welcomeSubtitle?: { ar: string; en: string };
   walletInfo?: {
     zainCash: string;
     masterCard: string;
+    supportPhone: string;
     showWallet: boolean;
   };
 }
