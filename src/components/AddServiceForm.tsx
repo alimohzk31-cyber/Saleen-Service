@@ -47,11 +47,26 @@ const compressImage = (file: File, maxWidth = 800): Promise<string> => {
 export function AddServiceForm({ onClose, onSuccess, language, currentUser, providerToEdit, setAllProviders, initialCategoryId, initialSubcategoryId }: Props) {
   const [activeStep, setActiveStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [countdown, setCountdown] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [dbCategories, setDbCategories] = useState<any[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      if (!supabase) return;
+      const { data, error } = await supabase.from('categories').select('id, name_ar, name_en');
+      if (error) {
+        console.error("Error fetching categories:", error);
+      } else {
+        console.log("Fetched categories from Supabase:", data);
+        setDbCategories(data || []);
+      }
+    };
+    fetchCategories();
+  }, []);
   
   const togglePlay = () => {
     if (videoRef.current) {
@@ -71,15 +86,12 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
   };
   
   const [formData, setFormData] = useState(() => {
-    const saved = localStorage.getItem('addServiceFormData');
-    if (saved && !providerToEdit) {
-      return JSON.parse(saved);
-    }
+    // Always start with empty form data when opening the form
     return {
       nameAr: '', nameEn: '',
       placeNameAr: '', placeNameEn: '',
       specialtyAr: '', specialtyEn: '',
-      categoryId: initialCategoryId || categories[0].id,
+      categoryId: initialCategoryId || (dbCategories.length > 0 ? dbCategories[0].id : ''),
       subcategoryId: initialSubcategoryId || 'all',
       certAr: '', certEn: '',
       expAr: '', expEn: '',
@@ -94,6 +106,8 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
       bioAr: '', bioEn: '',
     };
   });
+
+
 
   useEffect(() => {
     if (!providerToEdit) {
@@ -199,8 +213,13 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
 
   const performSave = async () => {
     setIsSubmitting(true);
+    console.log("Starting save process...");
     
     try {
+      if (!supabase) {
+        throw new Error("Supabase client not initialized");
+      }
+
       const providerData = {
         categoryId: formData.categoryId,
         subcategoryId: formData.subcategoryId,
@@ -224,22 +243,26 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
       };
 
       const supabaseData = {
-        title: formData.nameAr,
-        description: formData.bioAr,
+        provider_name: providerData.name.ar,
+        title: providerData.specialty.ar,
         category_id: formData.categoryId,
         subcategory_id: formData.subcategoryId,
         image_url: providerData.image,
-        video_url: formData.video || '',
         phone: formData.phone,
         lat: formData.lat,
         lng: formData.lng,
         service_type: formData.type,
-        experience: formData.expAr,
+        experience: providerData.experience?.ar || '',
         certificates: JSON.stringify(providerData.certificates),
-        bio: formData.bioAr,
-        user_id: currentUser?.uid ? parseInt(currentUser.uid) : null
+        bio: providerData.bio?.ar || '',
+        user_id: currentUser?.uid || null,
+        description: providerData.locationName.ar,
+        average_rating: formData.rating,
+        rating_count: 0
       };
 
+      console.log("Attempting to save to Supabase...", supabaseData);
+      
       if (providerToEdit) {
         const { error } = await supabase
           .from('services')
@@ -257,7 +280,12 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
           .insert([supabaseData])
           .select();
         
-        if (error) throw error;
+        if (error) {
+          console.error("Supabase error:", error);
+          throw error;
+        }
+        
+        console.log("Save successful!", data);
         
         if (setAllProviders && data) {
           setAllProviders(prev => [...prev, { ...providerData, id: String(data[0].id) } as Provider]);
@@ -265,9 +293,8 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
       }
 
       setShowSuccess(true);
-      if (!providerToEdit) {
-        localStorage.removeItem('addServiceFormData');
-      }
+      localStorage.removeItem('addServiceFormData');
+      
       setTimeout(() => {
         if (onSuccess) {
           onSuccess({ ...providerData, id: providerToEdit ? providerToEdit.id : (Date.now().toString()) } as Provider);
@@ -277,7 +304,11 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
       }, 2000);
     } catch (error) {
       console.error("Error saving provider:", error);
-      alert(language === 'ar' ? 'حدث خطأ أثناء الحفظ: ' + (error as Error).message : 'Error saving provider: ' + (error as Error).message);
+      const err = error as any;
+      console.log("Full Supabase error object:", JSON.stringify(err, null, 2));
+      const errorMessage = err.message || JSON.stringify(err);
+      const errorDetails = err.details || '';
+      setErrorMessage(language === 'ar' ? `حدث خطأ أثناء الحفظ: ${errorMessage} ${errorDetails}` : `Error saving provider: ${errorMessage} ${errorDetails}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -285,20 +316,7 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    setIsSubmitting(true);
-    setCountdown(1);
-    
-    const timer = setInterval(() => {
-      setCountdown(prev => {
-        if (prev >= 10) {
-          clearInterval(timer);
-          performSave();
-          return 10;
-        }
-        return prev + 1;
-      });
-    }, 1000);
+    performSave();
   };
 
   return (
@@ -310,7 +328,17 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
       >
         {/* Sticky Header */}
         <div className="p-5 border-b border-white/10 sticky top-0 bg-slate-900 z-10 flex justify-between items-center">
-          <h2 className="text-[20px] font-bold text-center text-white">{language === 'ar' ? 'نموذج الانضمام' : 'Join Form'}</h2>
+          <div className="flex items-center gap-2">
+            {activeStep > 0 && (
+              <button 
+                onClick={() => setActiveStep(activeStep - 1)} 
+                className="text-white/70 hover:text-white transition-colors"
+              >
+                <ArrowLeft className="w-6 h-6" />
+              </button>
+            )}
+            <h2 className="text-[20px] font-bold text-center text-white">{language === 'ar' ? 'نموذج الانضمام' : 'Join Form'}</h2>
+          </div>
           <button 
             onClick={onClose} 
             className="text-white/50 hover:text-white transition-colors"
@@ -328,6 +356,41 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
           ))}
         </div>
 
+        {/* Navigation */}
+        <div className="flex gap-4 p-4 border-b border-white/10">
+          {activeStep > 0 && (
+            <button type="button" onClick={() => setActiveStep(activeStep - 1)} className="flex-1 py-3 rounded-xl bg-slate-800 text-white font-bold">
+              {language === 'ar' ? 'السابق' : 'Previous'}
+            </button>
+          )}
+          {activeStep < 3 ? (
+            <button type="button" onClick={() => setActiveStep(activeStep + 1)} className="flex-1 py-3 rounded-xl bg-purple-600 text-white font-bold">
+              {language === 'ar' ? 'التالي' : 'Next'}
+            </button>
+          ) : (
+            <button 
+              type="button" 
+              onClick={(e) => {
+                const form = document.getElementById('add-service-form') as HTMLFormElement;
+                if (form && form.reportValidity()) {
+                  handleSubmit(e);
+                }
+              }}
+              disabled={isSubmitting} 
+              className="flex-1 py-3 rounded-xl bg-gradient-to-r from-primary to-purple-600 text-white font-bold shadow-lg disabled:opacity-50 hover:opacity-90 transition-all text-lg flex items-center justify-center gap-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span>{language === 'ar' ? 'جاري الحفظ...' : 'Saving...'}</span>
+                </>
+              ) : (
+                language === 'ar' ? 'حفظ البيانات والانضمام' : 'Save & Join'
+              )}
+            </button>
+          )}
+        </div>
+
         <div className="p-5 overflow-y-auto flex-1 custom-scrollbar">
           {showSuccess ? (
           <div className="text-center py-12 text-emerald-500 font-bold flex flex-col items-center gap-4">
@@ -339,6 +402,11 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
             id="add-service-form"
             className="flex flex-col gap-3"
           >
+            {errorMessage && (
+              <div className="p-3 bg-red-500/20 text-red-300 rounded-lg text-sm font-bold">
+                {errorMessage}
+              </div>
+            )}
             {activeStep === 0 && (
               <>
                 {(!initialCategoryId || !initialSubcategoryId) && (
@@ -371,7 +439,7 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
                 )}
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'الاسم الكامل' : 'Full Name'}</label>
-                  <input required type="text" placeholder={language === 'ar' ? 'الاسم الكامل (عربي)' : 'Full Name (Arabic)'} value={formData.nameAr} onChange={e => setFormData({...formData, nameAr: e.target.value})} className="w-full bg-slate-800 border-none rounded-lg p-3 text-white" />
+                  <input required type="text" placeholder={language === 'ar' ? 'الاسم الكامل (عربي)' : 'Full Name (Arabic)'} value={formData.nameAr || ''} onChange={e => setFormData({...formData, nameAr: e.target.value})} className="w-full bg-slate-800 border-none rounded-lg p-3 text-white" />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'العمر' : 'Age'}</label>
@@ -380,7 +448,7 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
                     placeholder={language === 'ar' ? 'العمر' : 'Age'} 
                     min="1"
                     max="99"
-                    value={formData.age} 
+                    value={formData.age || ''} 
                     onChange={e => {
                       let val = e.target.value;
                       if (val.length > 2) val = val.slice(0, 2);
@@ -396,11 +464,11 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
               <>
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'التخصص أو الوظيفة' : 'Specialty or Job'}</label>
-                  <input required type="text" placeholder={language === 'ar' ? 'التخصص (عربي)' : 'Specialty (Arabic)'} value={formData.specialtyAr} onChange={e => setFormData({...formData, specialtyAr: e.target.value})} className="w-full bg-slate-800 border-none rounded-lg p-3 text-white" />
+                  <input required type="text" placeholder={language === 'ar' ? 'التخصص (عربي)' : 'Specialty (Arabic)'} value={formData.specialtyAr || ''} onChange={e => setFormData({...formData, specialtyAr: e.target.value})} className="w-full bg-slate-800 border-none rounded-lg p-3 text-white" />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'سنوات الخبرة' : 'Years of Experience'}</label>
-                  <input required type="text" placeholder={language === 'ar' ? 'مثال: 5 سنوات' : 'e.g. 5 years'} value={formData.expAr} onChange={e => setFormData({...formData, expAr: e.target.value})} className="w-full bg-slate-800 border-none rounded-lg p-3 text-white" />
+                  <input required type="text" placeholder={language === 'ar' ? 'مثال: 5 سنوات' : 'e.g. 5 years'} value={formData.expAr || ''} onChange={e => setFormData({...formData, expAr: e.target.value})} className="w-full bg-slate-800 border-none rounded-lg p-3 text-white" />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-sm font-bold opacity-70 px-2">{language === 'ar' ? 'نبذة عن الخدمات المقدمة' : 'Services Description / Bio'}</label>
@@ -408,7 +476,7 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
                     required 
                     rows={3}
                     placeholder={language === 'ar' ? 'اكتب نبذة مختصرة عن الخدمات التي تقدمها...' : 'Write a brief description of your services...'} 
-                    value={formData.bioAr} 
+                    value={formData.bioAr || ''} 
                     onChange={e => setFormData({...formData, bioAr: e.target.value})} 
                     className="w-full bg-slate-800 border-none rounded-lg p-3 resize-none text-white" 
                   />
@@ -446,43 +514,28 @@ export function AddServiceForm({ onClose, onSuccess, language, currentUser, prov
                     <input type="file" accept="video/*" onChange={handleVideoUpload} className="hidden" />
                   </label>
                 </div>
+
+                {/* Image Previews */}
+                {formData.images && formData.images.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    {formData.images.map((img: string, idx: number) => (
+                      <img key={idx} src={img} alt="Preview" className="w-full h-20 object-cover rounded-lg" />
+                    ))}
+                  </div>
+                )}
+
+                {/* Video Preview */}
+                {videoPreviewUrl && (
+                  <div className="mt-2 relative rounded-lg overflow-hidden bg-black">
+                    <video ref={videoRef} src={videoPreviewUrl} className="w-full h-40 object-cover" />
+                    <button type="button" onClick={togglePlay} className="absolute inset-0 flex items-center justify-center bg-black/40">
+                      {isPlaying ? <Pause className="w-8 h-8 text-white" /> : <Play className="w-8 h-8 text-white" />}
+                    </button>
+                  </div>
+                )}
               </>
             )}
             
-            {/* Navigation */}
-            <div className="flex gap-4 mt-4">
-              {activeStep > 0 && (
-                <button type="button" onClick={() => setActiveStep(activeStep - 1)} className="flex-1 py-4 rounded-2xl bg-slate-800 text-white font-bold">
-                  {language === 'ar' ? 'السابق' : 'Previous'}
-                </button>
-              )}
-              {activeStep < 3 ? (
-                <button type="button" onClick={() => setActiveStep(activeStep + 1)} className="flex-1 py-4 rounded-2xl bg-purple-600 text-white font-bold">
-                  {language === 'ar' ? 'التالي' : 'Next'}
-                </button>
-              ) : (
-                <button 
-                  type="button" 
-                  onClick={(e) => {
-                    const form = document.getElementById('add-service-form') as HTMLFormElement;
-                    if (form && form.reportValidity()) {
-                      handleSubmit(e);
-                    }
-                  }}
-                  disabled={isSubmitting} 
-                  className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-primary to-purple-600 text-white font-bold shadow-lg disabled:opacity-50 hover:opacity-90 transition-all text-lg flex items-center justify-center gap-2"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      <span>{language === 'ar' ? `جاري الحفظ... ${countdown}/10` : `Saving... ${countdown}/10`}</span>
-                    </>
-                  ) : (
-                    language === 'ar' ? 'حفظ البيانات والانضمام' : 'Save & Join'
-                  )}
-                </button>
-              )}
-            </div>
           </form>
         )}
         </div>

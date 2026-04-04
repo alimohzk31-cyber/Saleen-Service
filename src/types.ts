@@ -40,6 +40,7 @@ export interface Provider {
   isEmergency24h?: boolean;
   createdAt?: number;
   views?: number;
+  userId?: string;
 }
 
 export interface Car {
